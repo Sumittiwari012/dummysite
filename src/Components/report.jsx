@@ -92,6 +92,12 @@ function Report() {
 
   const ChartComponent = chartType === 'line' ? LineChart : BarChart;
 
+  // Wallet payments are drawn from a balance that was already counted as
+  // revenue when the wallet was originally topped up, so including it again
+  // here would double-count that money. Subtract it from the raw API total.
+  const walletAmount = Number(reportData?.wallet?.totalAmount ?? 0);
+  const netTotalCollected = Number(reportData?.totalCollected ?? 0) - walletAmount;
+
   return (
     <div style={styles.page}>
       <h2 style={styles.pageTitle}>Payments Report</h2>
@@ -152,8 +158,11 @@ function Report() {
 
           <div style={styles.totalRow}>
             <span>Total Collected</span>
-            <span style={styles.totalAmount}>₹{Number(reportData.totalCollected ?? 0).toFixed(2)}</span>
+            <span style={styles.totalAmount}>₹{netTotalCollected.toFixed(2)}</span>
           </div>
+          <p style={styles.totalNote}>
+            Excludes ₹{walletAmount.toFixed(2)} in wallet payments (already counted when the wallet was funded).
+          </p>
 
           {/* ── Invoice-level breakdown per method ── */}
           <div style={styles.detailGrid}>
@@ -346,6 +355,11 @@ const styles = {
   },
   totalAmount: {
     color: '#28a745'
+  },
+  totalNote: {
+    fontSize: '0.78rem',
+    color: '#888',
+    margin: '-14px 0 20px 0'
   },
   detailGrid: {
     display: 'grid',
