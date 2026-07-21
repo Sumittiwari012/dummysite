@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ResponsiveContainer,
   LineChart,
@@ -38,6 +38,71 @@ function Report() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [chartType, setChartType] = useState('bar'); // 'bar' | 'line'
+
+  const [settling, setSettling] = useState(false);
+  const [settleMessage, setSettleMessage] = useState('');
+  const [settled, setSettled] = useState(false);
+
+  // Ask the backend for the real settlement status on load, instead of
+  // trusting a locally cached flag that can go stale (e.g. if the DB row
+  // gets deleted manually).
+  useEffect(() => {
+    const checkSettlementStatus = async () => {
+      const counterId = localStorage.getItem('counterId');
+      if (!counterId) return;
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/SettlementRequest/status/${counterId}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        setSettled(Boolean(data.settled));
+      } catch (err) {
+        console.error('Settlement status check error:', err);
+      }
+    };
+
+    checkSettlementStatus();
+  }, []);
+
+  const handleSettlement = async () => {
+    if (settled) return;
+
+    const confirmed = window.confirm('Are you sure you want to initiate settlement?');
+    if (!confirmed) return;
+
+    const counterId = localStorage.getItem('counterId');
+    if (!counterId) {
+      setSettleMessage('No counter ID found. Please log in again.');
+      return;
+    }
+
+    setSettling(true);
+    setSettleMessage('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/SettlementRequest/initiate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ counterId: Number(counterId) })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        setSettleMessage(data.message || 'Could not initiate settlement.');
+        if (response.status === 400) {
+          setSettled(true);
+        }
+        return;
+      }
+
+      setSettleMessage('Settlement request initiated.');
+      setSettled(true);
+    } catch (err) {
+      console.error('Settlement error:', err);
+      setSettleMessage('Could not reach the server. Please try again.');
+    } finally {
+      setSettling(false);
+    }
+  };
 
   const fetchReport = async () => {
     if (!startDate || !endDate) {
@@ -97,10 +162,46 @@ function Report() {
   // here would double-count that money. Subtract it from the raw API total.
   const walletAmount = Number(reportData?.wallet?.totalAmount ?? 0);
   const netTotalCollected = Number(reportData?.totalCollected ?? 0) - walletAmount;
+const [checkingStatus, setCheckingStatus] = useState(true);
 
+useEffect(() => {
+  const checkSettlementStatus = async () => {
+    const counterId = localStorage.getItem('counterId');
+    if (!counterId) {
+      setCheckingStatus(false);
+      return;
+    }
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/SettlementRequest/status/${counterId}`);
+      if (!response.ok) return;
+      const data = await response.json();
+      setSettled(Boolean(data.settled));
+    } catch (err) {
+      console.error('Settlement status check error:', err);
+    } finally {
+      setCheckingStatus(false);
+    }
+  };
+
+  checkSettlementStatus();
+}, []);
   return (
     <div style={styles.page}>
-      <h2 style={styles.pageTitle}>Payments Report</h2>
+      <div style={styles.headerRow}>
+        <h2 style={styles.pageTitle}>Payments Report</h2>
+        <button
+  style={{
+    ...styles.settlementButton,
+    ...(settled || checkingStatus ? styles.settlementButtonDisabled : {})
+  }}
+  onClick={handleSettlement}
+  disabled={settling || settled || checkingStatus}
+>
+  {checkingStatus ? 'Checking...' : settling ? 'Processing...' : 'Settlement'}
+</button>
+      </div>
+
+      {settleMessage && <p style={styles.settleMessage}>{settleMessage}</p>}
 
       {/* ── Date range controls ── */}
       <div style={styles.filterBar}>
@@ -258,9 +359,34 @@ const styles = {
     margin: '0 auto',
     fontFamily: 'inherit'
   },
+  headerRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '8px'
+  },
   pageTitle: {
-    margin: '0 0 20px 0',
+    margin: 0,
     fontSize: '1.5rem'
+  },
+  settlementButton: {
+    padding: '10px 20px',
+    backgroundColor: '#dc3545',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    fontSize: '0.9rem'
+  },
+  settlementButtonDisabled: {
+    backgroundColor: '#999',
+    cursor: 'not-allowed'
+  },
+  settleMessage: {
+    fontSize: '0.9rem',
+    color: '#28a745',
+    marginBottom: '15px'
   },
   filterBar: {
     display: 'flex',
