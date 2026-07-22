@@ -9,35 +9,37 @@ function PettyCashCheck({ counterId, onAccepted }) {
   const [accepting, setAccepting] = useState(false);
 
   useEffect(() => {
-    const fetchPettyCash = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/PettyCash/check/${counterId}`);
-        const data = await response.json();
+  const fetchPettyCash = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/PettyCash/check/${counterId}`);
+      const data = await response.json();
 
-        if (!response.ok) {
-          setError(data.message || 'Could not fetch petty cash.');
-          return;
-        }
-
-        setPettyCash(data);
-
-        if (data.accepted) {
-          onAccepted();
-        }
-      } catch (err) {
-        console.error('Petty cash fetch error:', err);
-        setError('Could not reach the server. Please try again.');
-      } finally {
-        setLoading(false);
+      if (!response.ok) {
+        setError(data.message || 'Could not fetch petty cash.');
+        return;
       }
-    };
 
-    if (counterId) {
-      fetchPettyCash();
+      if (!data.hasPending) {
+        // Nothing pending — skip straight through.
+        onAccepted();
+        return;
+      }
+
+      setPettyCash(data);
+    } catch (err) {
+      console.error('Petty cash fetch error:', err);
+      setError('Could not reach the server. Please try again.');
+    } finally {
+      setLoading(false);
     }
-  }, [counterId, onAccepted]);
+  };
+
+  if (counterId) {
+    fetchPettyCash();
+  }
+}, [counterId, onAccepted]);
 
   const handleAccept = async () => {
     setAccepting(true);

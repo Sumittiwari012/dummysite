@@ -152,7 +152,7 @@ useEffect(() => {
   const timer = setTimeout(() => {
     setSettlementPending(false);
     setLogoutError('');
-  }, 2000);
+  }, 5000);
   return () => clearTimeout(timer);
 }, [settlementPending]);
   useEffect(() => {
@@ -318,7 +318,7 @@ if (!isAdmin && !pettyCashAccepted) {
           </ul>
         </nav>
 
-      {settlementPending && (
+       {settlementPending && (
   <p style={styles.settlementWarning}>
     Settlement pending — please complete today's settlement before logging out.
   </p>
@@ -326,7 +326,6 @@ if (!isAdmin && !pettyCashAccepted) {
 {logoutError && !settlementPending && (
   <p style={styles.settlementWarning}>{logoutError}</p>
 )}
-
         {activeView === 'invoices' ? (
           <main className="invoice-display" style={styles.mainContent}>
             <PurchaseMasterList />
