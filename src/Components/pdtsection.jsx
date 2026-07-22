@@ -211,7 +211,9 @@ if (!isAdmin && !pettyCashAccepted) {
   return (
     <PettyCashCheck
       counterId={counterId}
+      userId={userId}
       onAccepted={() => setPettyCashAccepted(true)}
+      onDenied={clearSession}
     />
   );
 }

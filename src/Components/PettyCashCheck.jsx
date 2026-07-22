@@ -2,44 +2,45 @@ import React, { useState, useEffect } from 'react';
 
 const API_BASE_URL = 'https://dummypossetup.runasp.net';
 
-function PettyCashCheck({ counterId, onAccepted }) {
+function PettyCashCheck({ counterId, userId, onAccepted, onDenied }) {
   const [pettyCash, setPettyCash] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [accepting, setAccepting] = useState(false);
+  const [denying, setDenying] = useState(false);
 
   useEffect(() => {
-  const fetchPettyCash = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/PettyCash/check/${counterId}`);
-      const data = await response.json();
+    const fetchPettyCash = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/PettyCash/check/${counterId}`);
+        const data = await response.json();
 
-      if (!response.ok) {
-        setError(data.message || 'Could not fetch petty cash.');
-        return;
+        if (!response.ok) {
+          setError(data.message || 'Could not fetch petty cash.');
+          return;
+        }
+
+        if (!data.hasPending) {
+          // Nothing pending — skip straight through.
+          onAccepted();
+          return;
+        }
+
+        setPettyCash(data);
+      } catch (err) {
+        console.error('Petty cash fetch error:', err);
+        setError('Could not reach the server. Please try again.');
+      } finally {
+        setLoading(false);
       }
+    };
 
-      if (!data.hasPending) {
-        // Nothing pending — skip straight through.
-        onAccepted();
-        return;
-      }
-
-      setPettyCash(data);
-    } catch (err) {
-      console.error('Petty cash fetch error:', err);
-      setError('Could not reach the server. Please try again.');
-    } finally {
-      setLoading(false);
+    if (counterId) {
+      fetchPettyCash();
     }
-  };
-
-  if (counterId) {
-    fetchPettyCash();
-  }
-}, [counterId, onAccepted]);
+  }, [counterId, onAccepted]);
 
   const handleAccept = async () => {
     setAccepting(true);
@@ -66,6 +67,34 @@ function PettyCashCheck({ counterId, onAccepted }) {
     }
   };
 
+  const handleDeny = async () => {
+    setDenying(true);
+    setError('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/Auth/deny-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: Number(userId),
+          counterId: Number(counterId)
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.message || 'Could not cancel login.');
+        return;
+      }
+
+      onDenied();
+    } catch (err) {
+      console.error('Deny error:', err);
+      setError('Could not reach the server. Please try again.');
+    } finally {
+      setDenying(false);
+    }
+  };
+
   return (
     <div style={styles.overlay}>
       <div style={styles.box}>
@@ -82,9 +111,16 @@ function PettyCashCheck({ counterId, onAccepted }) {
             <button
               onClick={handleAccept}
               style={styles.button}
-              disabled={accepting}
+              disabled={accepting || denying}
             >
               {accepting ? 'Accepting...' : 'Accept'}
+            </button>
+            <button
+              onClick={handleDeny}
+              style={styles.denyButton}
+              disabled={accepting || denying}
+            >
+              {denying ? 'Denying...' : 'Deny'}
             </button>
           </>
         )}
@@ -141,6 +177,18 @@ const styles = {
     width: '100%',
     padding: '10px',
     backgroundColor: '#0056b3',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    fontSize: '1rem'
+  },
+  denyButton: {
+    marginTop: '10px',
+    width: '100%',
+    padding: '10px',
+    backgroundColor: '#dc3545',
     color: '#fff',
     border: 'none',
     borderRadius: '6px',
