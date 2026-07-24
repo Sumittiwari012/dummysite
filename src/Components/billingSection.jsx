@@ -67,14 +67,19 @@ const getInvoiceNumber = () => {
   const today = new Date();
   const dd = String(today.getDate()).padStart(2, '0');
   const mm = String(today.getMonth() + 1).padStart(2, '0');
-  const yyyy = today.getFullYear();
-  const dateStr = `${dd}${mm}${yyyy}`;
+  const yy = String(today.getFullYear()).slice(-2); // ← 2-digit year (26 instead of 2026)
+  const hh = String(today.getHours()).padStart(2, '0');   // 24hr format, no AM/PM conversion needed
+  const min = String(today.getMinutes()).padStart(2, '0');
+  const ss = String(today.getSeconds()).padStart(2, '0');
+
+  const dateStr = `${dd}${mm}${yy}`;
+  const timeStr = `${hh}${min}${ss}`;
 
   const storedCounter = parseInt(localStorage.getItem('invoiceCounter') || '0', 10);
   const newCounter = storedCounter + 1;
   localStorage.setItem('invoiceCounter', newCounter.toString());
 
-  return `GS${dateStr}${String(newCounter).padStart(4, '0')}`;
+  return `GS${dateStr}${timeStr}`;
 };
 
 function BillingSection({ products = [], cart = [], setCart }) {
@@ -230,12 +235,22 @@ function BillingSection({ products = [], cart = [], setCart }) {
     setIsSubmittingTransaction(true);
     setTransactionError('');
 
+    // ── Pull the logged-in counter's ID from localStorage (set at login) ──
+    const counterId = localStorage.getItem('counterId');
+
+    if (!counterId) {
+      setTransactionError('Counter ID missing — please log in again before completing the sale.');
+      setIsSubmittingTransaction(false);
+      return;
+    }
+
     const payload = {
       phoneNumber: selectedCustomer?.mobileNumber ?? selectedCustomer?.phoneNumber,
       invoiceNumber,
       totalAmount,
       discount: safeDiscount,
       payableAmount,
+      counterId: Number(counterId),
       items: cart.map((item) => ({
         productId: item.id,
         quantity: item.quantity,
@@ -256,7 +271,7 @@ function BillingSection({ products = [], cart = [], setCart }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-
+      
       const result = await response.json();
 
       if (!response.ok) {

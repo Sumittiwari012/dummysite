@@ -3,7 +3,6 @@ import BillingSection from './billingSection';
 import PurchaseMasterList from './Purchasemasterlist';
 import PurchaseDetailList from './Purchasedetaillist';
 import PaymentList from './Paymentlist';
-import CustomerList from './Customerlist';
 import ReturnSection from './returnsection';
 import Report from './report';
 import LoginPage from './LoginPage';
@@ -272,18 +271,7 @@ if (!isAdmin && !pettyCashAccepted) {
                 Payment
               </a>
             </li>
-            <li>
-              <a
-                href="#customers"
-                onClick={handleNavClick('customers')}
-                style={{
-                  ...styles.link,
-                  ...(activeView === 'customers' ? styles.activeLink : {})
-                }}
-              >
-                Customers
-              </a>
-            </li>
+            
             <li><a href="#returns"
   onClick={handleNavClick('returns')}
   style={{ ...styles.link, ...(activeView === 'returns' ? styles.activeLink : {}) }}
@@ -340,10 +328,7 @@ if (!isAdmin && !pettyCashAccepted) {
           <main className="payment-display" style={styles.mainContent}>
             <PaymentList />
           </main>
-        ) : activeView === 'customers' ? (
-          <main className="customers-display" style={styles.mainContent}>
-            <CustomerList />
-          </main>
+        
         ) : activeView === 'returns' ? (
   <main className="returns-display" style={styles.mainContent}>
     <ReturnSection />
