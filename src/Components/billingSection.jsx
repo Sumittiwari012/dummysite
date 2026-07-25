@@ -488,6 +488,7 @@ function BillingSection({ products = [], cart = [], setCart }) {
   invoiceNumber={invoiceNumber}
   payableAmount={payableAmount}
   walletBalance={Number(selectedCustomer?.currentBalance ?? selectedCustomer?.walletValue ?? 0)}
+  customerPhone={selectedCustomer?.mobileNumber ?? selectedCustomer?.phoneNumber}
   existingPayments={currentPayments}
   onUpdatePayments={handleUpdatePayments}
   onComplete={handlePaymentComplete}
