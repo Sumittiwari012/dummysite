@@ -22,8 +22,7 @@ function Payment({ invoiceNumber, payableAmount, walletBalance = 0, existingPaym
     setError('');
 
     if (m === 'WALLET') {
-      // Default to using the full available wallet balance, capped at what's still owed.
-      // The person can still edit this field down for a partial wallet payment.
+      
       const defaultWalletAmount = Math.min(remaining, walletRemaining);
       setAmountInput(defaultWalletAmount > 0 ? defaultWalletAmount.toFixed(2) : '');
     } else {
