@@ -43,14 +43,20 @@ function Report() {
   const [settleMessage, setSettleMessage] = useState('');
   const [settled, setSettled] = useState(false);
 
-  // Ask the backend for the real settlement status on load, instead of
-  // trusting a locally cached flag that can go stale (e.g. if the DB row
-  // gets deleted manually).
+  const [checkingStatus, setCheckingStatus] = useState(true);
+
+  // ── Petty cash for the current session (read-only) ──
+  const [pettyCashInfo, setPettyCashInfo] = useState(null);
+  const [pettyCashLoading, setPettyCashLoading] = useState(true);
+  const [pettyCashError, setPettyCashError] = useState('');
+
   useEffect(() => {
     const checkSettlementStatus = async () => {
       const counterId = localStorage.getItem('counterId');
-      if (!counterId) return;
-
+      if (!counterId) {
+        setCheckingStatus(false);
+        return;
+      }
       try {
         const response = await fetch(`${API_BASE_URL}/api/SettlementRequest/status/${counterId}`);
         if (!response.ok) return;
@@ -58,10 +64,44 @@ function Report() {
         setSettled(Boolean(data.settled));
       } catch (err) {
         console.error('Settlement status check error:', err);
+      } finally {
+        setCheckingStatus(false);
       }
     };
 
     checkSettlementStatus();
+  }, []);
+
+  // ── Fetch this session's petty cash on load (read-only display) ──
+  useEffect(() => {
+    const fetchPettyCash = async () => {
+      const counterId = localStorage.getItem('counterId');
+      if (!counterId) {
+        setPettyCashLoading(false);
+        return;
+      }
+      setPettyCashLoading(true);
+      setPettyCashError('');
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/PettyCash/LatestPettyCashByCounterId?CounterId=${counterId}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          setPettyCashError(data.message || 'Could not load petty cash.');
+          return;
+        }
+
+        setPettyCashInfo(data);
+        console.log('Petty cash response:', data);
+      } catch (err) {
+        console.error('Petty cash check error:', err);
+        setPettyCashError('Could not reach the server.');
+      } finally {
+        setPettyCashLoading(false);
+      }
+    };
+
+    fetchPettyCash();
   }, []);
 
   const handleSettlement = async () => {
@@ -104,12 +144,12 @@ function Report() {
     }
   };
 
-  const fetchReport = async () => {
-    if (!startDate || !endDate) {
+  const fetchReport = async (rangeStart = startDate, rangeEnd = endDate) => {
+    if (!rangeStart || !rangeEnd) {
       setError('Please select both a start and end date.');
       return;
     }
-    if (new Date(startDate) > new Date(endDate)) {
+    if (new Date(rangeStart) > new Date(rangeEnd)) {
       setError('Start date cannot be after end date.');
       return;
     }
@@ -117,7 +157,12 @@ function Report() {
     setIsLoading(true);
     setError('');
     try {
-      const url = `${API_BASE_URL}/DateRangeReport?startDate=${startDate}&endDate=${endDate}`;
+      const counterId = localStorage.getItem('counterId');
+      const params = new URLSearchParams({ startDate: rangeStart, endDate: rangeEnd });
+      if (counterId) {
+        params.set('counterId', counterId);
+      }
+      const url = `${API_BASE_URL}/DateRangeReport?${params}`;
       const res = await fetch(url);
       if (!res.ok) {
         throw new Error(`Request failed with status ${res.status}`);
@@ -132,6 +177,12 @@ function Report() {
       setIsLoading(false);
     }
   };
+
+  // Load today's report by default on mount
+  useEffect(() => {
+    fetchReport(todayStr(), todayStr());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Build one combined dataset: date -> { Cash, Card, UPI, Wallet }
   const chartData = useMemo(() => {
@@ -162,46 +213,33 @@ function Report() {
   // here would double-count that money. Subtract it from the raw API total.
   const walletAmount = Number(reportData?.wallet?.totalAmount ?? 0);
   const netTotalCollected = Number(reportData?.totalCollected ?? 0) - walletAmount;
-const [checkingStatus, setCheckingStatus] = useState(true);
 
-useEffect(() => {
-  const checkSettlementStatus = async () => {
-    const counterId = localStorage.getItem('counterId');
-    if (!counterId) {
-      setCheckingStatus(false);
-      return;
-    }
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/SettlementRequest/status/${counterId}`);
-      if (!response.ok) return;
-      const data = await response.json();
-      setSettled(Boolean(data.settled));
-    } catch (err) {
-      console.error('Settlement status check error:', err);
-    } finally {
-      setCheckingStatus(false);
-    }
-  };
-
-  checkSettlementStatus();
-}, []);
   return (
     <div style={styles.page}>
       <div style={styles.headerRow}>
         <h2 style={styles.pageTitle}>Payments Report</h2>
         <button
-  style={{
-    ...styles.settlementButton,
-    ...(settled || checkingStatus ? styles.settlementButtonDisabled : {})
-  }}
-  onClick={handleSettlement}
-  disabled={settling || settled || checkingStatus}
->
-  {checkingStatus ? 'Checking...' : settling ? 'Processing...' : 'Settlement'}
-</button>
+          style={{
+            ...styles.settlementButton,
+            ...(settled || checkingStatus ? styles.settlementButtonDisabled : {})
+          }}
+          onClick={handleSettlement}
+          disabled={settling || settled || checkingStatus}
+        >
+          {checkingStatus ? 'Checking...' : settling ? 'Processing...' : 'Settlement'}
+        </button>
       </div>
 
       {settleMessage && <p style={styles.settleMessage}>{settleMessage}</p>}
+
+      {/* ── Petty cash for this session (read-only) ── */}
+      {!pettyCashLoading && !pettyCashError && pettyCashInfo?.pettyCash != null && (
+        <div style={styles.pettyCashBanner}>
+          <span style={styles.pettyCashLabel}>Petty Cash</span>
+          <span style={styles.pettyCashAmount}>₹{Number(pettyCashInfo.pettyCash).toFixed(2)}</span>
+        </div>
+      )}
+      {pettyCashError && <p style={styles.errorText}>{pettyCashError}</p>}
 
       {/* ── Date range controls ── */}
       <div style={styles.filterBar}>
@@ -225,7 +263,7 @@ useEffect(() => {
         </div>
         <button
           style={styles.primaryButton}
-          onClick={fetchReport}
+          onClick={() => fetchReport()}
           disabled={isLoading}
         >
           {isLoading ? 'Loading...' : 'Get Report'}
@@ -387,6 +425,26 @@ const styles = {
     fontSize: '0.9rem',
     color: '#28a745',
     marginBottom: '15px'
+  },
+  pettyCashBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    backgroundColor: '#fff8e1',
+    border: '1px solid #ffe082',
+    borderRadius: '6px',
+    padding: '10px 16px',
+    marginBottom: '15px',
+    fontSize: '0.9rem'
+  },
+  pettyCashLabel: {
+    color: '#666',
+    fontWeight: 'bold'
+  },
+  pettyCashAmount: {
+    fontWeight: 'bold',
+    color: '#222',
+    fontSize: '1rem'
   },
   filterBar: {
     display: 'flex',
