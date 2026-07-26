@@ -67,19 +67,19 @@ const getInvoiceNumber = () => {
   const today = new Date();
   const dd = String(today.getDate()).padStart(2, '0');
   const mm = String(today.getMonth() + 1).padStart(2, '0');
-  const yy = String(today.getFullYear()).slice(-2); // ← 2-digit year (26 instead of 2026)
-  const hh = String(today.getHours()).padStart(2, '0');   // 24hr format, no AM/PM conversion needed
-  const min = String(today.getMinutes()).padStart(2, '0');
-  const ss = String(today.getSeconds()).padStart(2, '0');
+  const yy = String(today.getFullYear()).slice(-2); // 2-digit year (26 instead of 2026)
 
   const dateStr = `${dd}${mm}${yy}`;
-  const timeStr = `${hh}${min}${ss}`;
+
+  const counterId = localStorage.getItem('counterId') || '0';
 
   const storedCounter = parseInt(localStorage.getItem('invoiceCounter') || '0', 10);
   const newCounter = storedCounter + 1;
   localStorage.setItem('invoiceCounter', newCounter.toString());
 
-  return `GS${dateStr}${timeStr}`;
+  const seqStr = String(newCounter).padStart(4, '0');
+
+  return `GSC${counterId}${dateStr}${seqStr}`;
 };
 
 function BillingSection({ products = [], cart = [], setCart }) {
