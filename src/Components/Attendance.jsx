@@ -7,9 +7,32 @@ import {
   Phone,
   ShieldCheck
 } from "lucide-react";
+import FingerprintJS from "@fingerprintjs/fingerprintjs";
 
+const API_BASE_URL = "https://dummypossetup.runasp.net";
 const STORAGE_KEY = "attendanceUser";
-const DEMO_OTP = "1234"; // hardcoded for now, per requirement
+const OTP_ID_STORAGE_KEY = "attendanceOtpId"; // holds the InvoiceNumber/Idval between the two steps
+
+// ── Helpers that don't need component state ──
+
+const getGeolocation = () =>
+  new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("Geolocation not supported"));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve(pos.coords), // { latitude, longitude, accuracy }
+      (err) => reject(err),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  });
+
+const getDeviceFingerprint = async () => {
+  const fp = await FingerprintJS.load();
+  const result = await fp.get();
+  return result.visitorId;
+};
 
 export default function Attendance() {
   // ── Session / auth state ──
@@ -22,12 +45,14 @@ export default function Attendance() {
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
 
-  // ── Attendance state (unchanged) ──
+  // ── Attendance state ──
   const [loggedIn, setLoggedIn] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null); // "login" | "logout" | null
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [confirmError, setConfirmError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
 
-  const history = [
+  const [history, setHistory] = useState([
     {
       date: "03 Aug 2026",
       userId: "EMP001",
@@ -46,7 +71,7 @@ export default function Attendance() {
       loginDateTime: "01 Aug 2026, 09:10 AM",
       logoutDateTime: "01 Aug 2026, 06:05 PM"
     }
-  ];
+  ]);
 
   // ── On mount: check localStorage for an existing user ──
   useEffect(() => {
@@ -62,8 +87,9 @@ export default function Attendance() {
     setCheckingSession(false);
   }, []);
 
-  // ── Step 1: submit phone number, move to OTP step ──
-  const handleSendOtp = (e) => {
+  // ── Step 1: submit phone number → call SignupOtp, store the returned
+  //     InvoiceNumber (Idval) so it can be sent back on verification ──
+  const handleSendOtp = async (e) => {
     e.preventDefault();
     setAuthError("");
 
@@ -72,49 +98,152 @@ export default function Attendance() {
       return;
     }
 
-    // OTP is fixed to 1234 for now — no real SMS is sent yet.
-    setAuthStep("otp");
+    setAuthLoading(true);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/Attendance/SignupOtp?PhoneNumber=${encodeURIComponent(phoneNumber.trim())}`,
+        { method: "POST" }
+      );
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.message || "Could not send OTP. Please try again.");
+      }
+
+      // Hang onto the InvoiceNumber (Idval) — it's needed on the verify call.
+      localStorage.setItem(OTP_ID_STORAGE_KEY, data.invoiceNumber);
+
+      setAuthStep("otp");
+    } catch (err) {
+      console.error("Send OTP error:", err);
+      setAuthError(err.message || "Could not reach the server. Please try again.");
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
-  // ── Step 2: verify OTP, then look up user details and store in localStorage ──
+  // ── Step 2: submit OTP + the stored Idval → call SignUpVerification,
+  //     then store the returned user in localStorage ──
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
     setAuthError("");
 
-    if (otp.trim() !== DEMO_OTP) {
-      setAuthError("Incorrect OTP. Please try again.");
+    const idVal = localStorage.getItem(OTP_ID_STORAGE_KEY);
+    if (!idVal) {
+      setAuthError("Session expired — please request a new OTP.");
+      setAuthStep("phone");
       return;
     }
 
     setAuthLoading(true);
     try {
-      // ── TEMPORARY MOCK — no real backend endpoint wired up yet ──
-      // Swap this block for a real fetch() call once the user-lookup API
-      // is available. Simulated with a short delay so the loading state
-      // is visible, same as a real network call would behave.
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const res = await fetch(
+        `${API_BASE_URL}/api/Attendance/SignUpVerification?OtpVal=${encodeURIComponent(otp.trim())}&Idval=${encodeURIComponent(idVal)}`,
+        { method: "POST" }
+      );
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.message || "Incorrect OTP. Please try again.");
+      }
 
       const userRecord = {
-        userId: "EMP001",
-        username: "John Doe",
-        mobileNumber: phoneNumber.trim()
+        userId: data.user?.id ?? data.user?.Id,
+        username: data.user?.userName ?? data.user?.UserName,
+        mobileNumber: data.user?.mobileNumber ?? data.user?.MobileNumber ?? phoneNumber.trim()
       };
-      // ── END MOCK ──
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify(userRecord));
+      localStorage.removeItem(OTP_ID_STORAGE_KEY); // one-time use — clear it now that verification succeeded
       setUser(userRecord);
     } catch (err) {
-      console.error("OTP verify / user fetch error:", err);
+      console.error("OTP verify error:", err);
       setAuthError(err.message || "Could not verify OTP. Please try again.");
     } finally {
       setAuthLoading(false);
     }
   };
 
-  const handleConfirm = () => {
-    if (confirmAction === "login") setLoggedIn(true);
-    if (confirmAction === "logout") setLoggedIn(false);
-    setConfirmAction(null);
+  // ── Confirm popup action → actually calls ClockIn / ClockOut ──
+  // This now lives inside the component so it can see `user`, `confirmAction`,
+  // and the state setters — the previous top-level version referenced all of
+  // these out of scope and would have thrown at runtime.
+  const handleConfirm = async () => {
+    if (!confirmAction || !user?.userId) return;
+
+    setConfirmError("");
+    setConfirmLoading(true);
+
+    try {
+      const coords = await getGeolocation();
+      const fingerprint = await getDeviceFingerprint();
+
+      const endpoint = confirmAction === "login" ? "ClockIn" : "ClockOut";
+
+      const res = await fetch(`${API_BASE_URL}/api/Attendance/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.userId,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          accuracy: coords.accuracy,
+          deviceFingerprint: fingerprint
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        // Surfaces backend errors like "already_clocked_in" / "no_open_clock_in"
+        throw new Error(data.error || data.message || "Action failed. Please try again.");
+      }
+
+      console.log("Discrepancy check:", data); // distanceFromOfficeMeters, accuracyMeters, gpsVerified
+
+      const now = new Date();
+      const stamp = now.toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true
+      }).replace(",", ",");
+
+      if (confirmAction === "login") {
+        setLoggedIn(true);
+        setHistory((prev) => [
+          {
+            date: stamp.split(",")[0],
+            userId: user.userId,
+            loginDateTime: stamp,
+            logoutDateTime: "—"
+          },
+          ...prev
+        ]);
+      } else {
+        setLoggedIn(false);
+        setHistory((prev) => {
+          const [latest, ...rest] = prev;
+          if (!latest) return prev;
+          return [{ ...latest, logoutDateTime: stamp }, ...rest];
+        });
+      }
+
+      setConfirmAction(null);
+    } catch (err) {
+      console.error(err);
+      setConfirmError(
+        err.message === "Geolocation not supported" || err.code
+          ? "Could not verify your location. Please enable location access and try again."
+          : err.message || "Could not verify location/device. Please try again."
+      );
+    } finally {
+      setConfirmLoading(false);
+    }
   };
 
   // ── Still checking localStorage on first render ──
@@ -164,9 +293,10 @@ export default function Attendance() {
 
               <button
                 type="submit"
-                className="mt-5 w-full bg-blue-600 text-white py-3 rounded-lg font-medium"
+                disabled={authLoading}
+                className="mt-5 w-full bg-blue-600 text-white py-3 rounded-lg font-medium disabled:opacity-60"
               >
-                Send OTP
+                {authLoading ? "Sending..." : "Send OTP"}
               </button>
             </form>
           ) : (
@@ -201,6 +331,7 @@ export default function Attendance() {
                   setAuthStep("phone");
                   setOtp("");
                   setAuthError("");
+                  localStorage.removeItem(OTP_ID_STORAGE_KEY);
                 }}
               >
                 Change mobile number
@@ -343,21 +474,30 @@ export default function Attendance() {
               Are you sure you want to {confirmAction === "login" ? "login" : "logout"}?
             </p>
 
+            {confirmError && (
+              <p className="text-red-500 text-sm mt-2">{confirmError}</p>
+            )}
+
             <div className="flex gap-3 mt-6">
               <button
-                className="flex-1 border rounded-lg py-2"
-                onClick={() => setConfirmAction(null)}
+                className="flex-1 border rounded-lg py-2 disabled:opacity-60"
+                onClick={() => {
+                  setConfirmAction(null);
+                  setConfirmError("");
+                }}
+                disabled={confirmLoading}
               >
                 Cancel
               </button>
 
               <button
-                className={`flex-1 text-white rounded-lg py-2 ${
+                className={`flex-1 text-white rounded-lg py-2 disabled:opacity-60 ${
                   confirmAction === "login" ? "bg-blue-600" : "bg-red-500"
                 }`}
                 onClick={handleConfirm}
+                disabled={confirmLoading}
               >
-                Confirm
+                {confirmLoading ? "Please wait..." : "Confirm"}
               </button>
             </div>
 
