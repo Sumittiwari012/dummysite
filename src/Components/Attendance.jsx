@@ -34,6 +34,30 @@ const getDeviceFingerprint = async () => {
   return result.visitorId;
 };
 
+// ── Formatting helpers for AttendanceHistory rows ──
+const formatDateOnly = (value) => {
+  if (!value) return "—";
+  const d = new Date(value);
+  return isNaN(d) ? "—" : d.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  });
+};
+
+const formatDateTime = (value) => {
+  if (!value) return "—";
+  const d = new Date(value);
+  return isNaN(d) ? "—" : d.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true
+  });
+};
+
 export default function Attendance() {
   // ── Session / auth state ──
   const [checkingSession, setCheckingSession] = useState(true);
@@ -51,27 +75,10 @@ export default function Attendance() {
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [confirmError, setConfirmError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
-
-  const [history, setHistory] = useState([
-    {
-      date: "03 Aug 2026",
-      userId: "EMP001",
-      loginDateTime: "03 Aug 2026, 09:15 AM",
-      logoutDateTime: "—"
-    },
-    {
-      date: "02 Aug 2026",
-      userId: "EMP001",
-      loginDateTime: "02 Aug 2026, 09:05 AM",
-      logoutDateTime: "02 Aug 2026, 06:20 PM"
-    },
-    {
-      date: "01 Aug 2026",
-      userId: "EMP001",
-      loginDateTime: "01 Aug 2026, 09:10 AM",
-      logoutDateTime: "01 Aug 2026, 06:05 PM"
-    }
-  ]);
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [historyStale, setHistoryStale] = useState(true); // refetch after login/logout
 
   // ── On mount: check localStorage for an existing user, then ask the
   //     backend for the REAL clock-in status instead of assuming "logged out".
@@ -197,6 +204,33 @@ export default function Attendance() {
     }
   };
 
+  // ── Fetch attendance history from the backend ──
+  const fetchHistory = async () => {
+    if (!user?.userId) return;
+
+    setHistoryLoading(true);
+    setHistoryError("");
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/Attendance/AttendanceHistory?UserId=${encodeURIComponent(user.userId)}`
+      );
+      const data = await res.json().catch(() => ([]));
+
+      if (!res.ok) {
+        throw new Error(data.message || "Could not load history.");
+      }
+
+      setHistory(Array.isArray(data) ? data : []);
+      setHistoryStale(false);
+    } catch (err) {
+      console.error("Fetch history error:", err);
+      setHistoryError(err.message || "Could not load history. Please try again.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   // ── Confirm popup action → actually calls ClockIn / ClockOut ──
   // This now lives inside the component so it can see `user`, `confirmAction`,
   // and the state setters — the previous top-level version referenced all of
@@ -234,34 +268,15 @@ export default function Attendance() {
 
       console.log("Discrepancy check:", data); // distanceFromOfficeMeters, accuracyMeters, gpsVerified
 
-      const now = new Date();
-      const stamp = now.toLocaleString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true
-      }).replace(",", ",");
+      setLoggedIn(confirmAction === "login");
 
-      if (confirmAction === "login") {
-        setLoggedIn(true);
-        setHistory((prev) => [
-          {
-            date: stamp.split(",")[0],
-            userId: user.userId,
-            loginDateTime: stamp,
-            logoutDateTime: "—"
-          },
-          ...prev
-        ]);
-      } else {
-        setLoggedIn(false);
-        setHistory((prev) => {
-          const [latest, ...rest] = prev;
-          if (!latest) return prev;
-          return [{ ...latest, logoutDateTime: stamp }, ...rest];
-        });
+      // The local `history` array is now populated straight from
+      // AttendanceHistory, so instead of hand-building a row here, just
+      // mark it stale — if the history panel is open, refetch immediately;
+      // otherwise it'll refetch the next time the panel is opened.
+      setHistoryStale(true);
+      if (showHistory) {
+        fetchHistory();
       }
 
       setConfirmAction(null);
@@ -444,7 +459,13 @@ export default function Attendance() {
 
         <div className="mx-5 mt-5 mb-8">
           <button
-            onClick={() => setShowHistory((prev) => !prev)}
+            onClick={() => {
+              const opening = !showHistory;
+              setShowHistory(opening);
+              if (opening && (historyStale || history.length === 0)) {
+                fetchHistory();
+              }
+            }}
             className="w-full border border-gray-300 text-gray-700 py-3 rounded-lg flex justify-center items-center gap-2 font-medium"
           >
             <Clock size={18} />
@@ -460,33 +481,49 @@ export default function Attendance() {
 
       {showHistory && (
         <div className="w-full overflow-x-auto">
-          <table className="w-full text-sm border-t">
-            <thead>
-              <tr className="bg-gray-50 text-gray-500 text-left">
-                <th className="py-2 px-3 font-medium whitespace-nowrap">Date</th>
-                <th className="py-2 px-3 font-medium whitespace-nowrap">User ID</th>
-                <th className="py-2 px-3 font-medium whitespace-nowrap">Login Date Time</th>
-                <th className="py-2 px-3 font-medium whitespace-nowrap">Logout Date Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.map((item, index) => (
-                <tr
-                  key={index}
-                  className={index !== history.length - 1 ? "border-b" : ""}
-                >
-                  <td className="py-2 px-3 whitespace-nowrap">{item.date}</td>
-                  <td className="py-2 px-3 whitespace-nowrap">{item.userId}</td>
-                  <td className="py-2 px-3 text-green-600 whitespace-nowrap">
-                    {item.loginDateTime}
-                  </td>
-                  <td className="py-2 px-3 text-red-500 whitespace-nowrap">
-                    {item.logoutDateTime}
-                  </td>
+          {historyLoading ? (
+            <p className="text-center text-gray-500 py-6 text-sm">Loading history...</p>
+          ) : historyError ? (
+            <div className="text-center py-6">
+              <p className="text-red-500 text-sm">{historyError}</p>
+              <button
+                onClick={fetchHistory}
+                className="mt-2 text-blue-600 text-sm underline"
+              >
+                Retry
+              </button>
+            </div>
+          ) : history.length === 0 ? (
+            <p className="text-center text-gray-500 py-6 text-sm">No attendance records yet.</p>
+          ) : (
+            <table className="w-full text-sm border-t">
+              <thead>
+                <tr className="bg-gray-50 text-gray-500 text-left">
+                  <th className="py-2 px-3 font-medium whitespace-nowrap">Date</th>
+                  <th className="py-2 px-3 font-medium whitespace-nowrap">User ID</th>
+                  <th className="py-2 px-3 font-medium whitespace-nowrap">Login Date Time</th>
+                  <th className="py-2 px-3 font-medium whitespace-nowrap">Logout Date Time</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {history.map((item, index) => (
+                  <tr
+                    key={item.id ?? index}
+                    className={index !== history.length - 1 ? "border-b" : ""}
+                  >
+                    <td className="py-2 px-3 whitespace-nowrap">{formatDateOnly(item.date)}</td>
+                    <td className="py-2 px-3 whitespace-nowrap">{item.userId}</td>
+                    <td className="py-2 px-3 text-green-600 whitespace-nowrap">
+                      {formatDateTime(item.loginDateTime)}
+                    </td>
+                    <td className="py-2 px-3 text-red-500 whitespace-nowrap">
+                      {formatDateTime(item.logoutDateTime)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 
