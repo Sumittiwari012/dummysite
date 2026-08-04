@@ -205,7 +205,7 @@ function InvoiceBill({ invoice, onClose }) {
 
           <div style={styles.metaRow}>
             <span>INVOICE NO.: {invoiceNumber}</span>
-            <span>{new Date(completedAt).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+            {/* <span>{new Date(completedAt).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span> */}
           </div>
 
           <div style={styles.customerBlock}>
@@ -377,7 +377,10 @@ const styles = {
     maxHeight: '90vh', overflowY: 'auto', padding: '30px',
     borderRadius: '8px', boxShadow: '0 8px 35px rgba(0,0,0,0.2)'
   },
-  header: { textAlign: 'center', marginBottom: '15px' },
+  header: {display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  textAlign: "center", marginBottom: '15px' },
   logo: { width: '250px', objectFit: 'contain', marginBottom: '5px' }, // Shrunk logo
   companyName: { margin: '0 0 4px 0', fontSize: '0.9rem', fontWeight: 'bold' },
   address: { margin: 0, fontSize: '0.85rem', color: '#333' },

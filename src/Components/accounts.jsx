@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Download } from "lucide-react";
+import * as XLSX from "xlsx";
 
 const API_BASE_URL = "https://dummypossetup.runasp.net";
 
@@ -70,6 +71,53 @@ export default function Accounts() {
       fetchInvoices();
     }
     // Returns / Wallet: no backend endpoint yet — nothing to fetch.
+  };
+
+  // ── Build a two-sheet workbook from the invoices already in state.
+  //     Sheet 1: one row per invoice (overview totals).
+  //     Sheet 2: one row per line item, flattened out of each
+  //     invoice's `details` array, with invoice no./date repeated
+  //     on each row so it's still identifiable once flattened. ──
+  const handleDownloadExcel = () => {
+    if (!invoices.length) return;
+
+    const overviewRows = invoices.map((inv) => ({
+      "Invoice No.": inv.invoiceNumber,
+      "Date": formatDate(inv.invoiceDate),
+      "Mobile": inv.customerMobileNumber || "",
+      "Taxable": inv.totalTaxable,
+      "CGST": inv.totalCgst,
+      "SGST": inv.totalSgst,
+      "IGST": inv.totalIgst,
+      "Tax": inv.totalTax,
+      "Discount": inv.discount,
+      "Total (Incl. GST)": inv.totalInclusive
+    }));
+
+    const detailRows = invoices.flatMap((inv) =>
+      (inv.details || []).map((d) => ({
+        "Invoice No.": inv.invoiceNumber,
+        "Date": formatDate(inv.invoiceDate),
+        "Product": d.productName,
+        "Qty": d.quantity,
+        "Price/Unit": d.salePricePerUnit,
+        "Taxable": d.taxableAmount,
+        "CGST %": d.cgstPercent,
+        "CGST ₹": d.cgstValue,
+        "SGST %": d.sgstPercent,
+        "SGST ₹": d.sgstValue,
+        "IGST %": d.igstPercent,
+        "IGST ₹": d.igstValue,
+        "Total": d.inclusiveTotal
+      }))
+    );
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(overviewRows), "Invoices");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detailRows), "Invoice Details");
+
+    const fileName = `Invoices_${fromDate || "start"}_to_${toDate || "end"}.xlsx`;
+    XLSX.writeFile(wb, fileName);
   };
 
   return (
@@ -176,7 +224,29 @@ export default function Accounts() {
       >
         {activeTab === "invoices" && (
           <>
-            <h3 style={{ marginTop: 0 }}>Invoices</h3>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+              <h3 style={{ marginTop: 0, marginBottom: 0 }}>Invoices</h3>
+              {invoices.length > 0 && (
+                <button
+                  onClick={handleDownloadExcel}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "8px 16px",
+                    background: "#2e7d32",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    fontSize: "0.9em"
+                  }}
+                >
+                  <Download size={16} />
+                  Download Excel
+                </button>
+              )}
+            </div>
 
             {!canSearch ? (
               <p style={{ color: "#777" }}>Select a date range and tap Search.</p>
@@ -201,8 +271,10 @@ export default function Accounts() {
                     <th style={thStyle}></th>
                     <th style={thStyle}>Invoice No.</th>
                     <th style={thStyle}>Date</th>
+                    <th style={thStyle}>Mobile</th>
                     <th style={thStyle}>Taxable</th>
                     <th style={thStyle}>Tax</th>
+                    <th style={thStyle}>Discount</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -221,13 +293,15 @@ export default function Accounts() {
                           </td>
                           <td style={tdStyle}>{inv.invoiceNumber}</td>
                           <td style={tdStyle}>{formatDate(inv.invoiceDate)}</td>
+                          <td style={tdStyle}>{inv.customerMobileNumber || "—"}</td>
                           <td style={tdStyle}>{formatCurrency(inv.totalTaxable)}</td>
                           <td style={tdStyle}>{formatCurrency(inv.totalTax)}</td>
+                          <td style={tdStyle}>{formatCurrency(inv.discount)}</td>
                         </tr>
 
                         {isExpanded && (
                           <tr>
-                            <td style={{ ...tdStyle, background: "#fafafa" }} colSpan={5}>
+                            <td style={{ ...tdStyle, background: "#fafafa" }} colSpan={7}>
                               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                                 <thead>
                                   <tr>
