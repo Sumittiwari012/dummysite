@@ -73,18 +73,49 @@ export default function Attendance() {
     }
   ]);
 
-  // ── On mount: check localStorage for an existing user ──
+  // ── On mount: check localStorage for an existing user, then ask the
+  //     backend for the REAL clock-in status instead of assuming "logged out".
+  //     Without this, `loggedIn` always starts at false on page load, which
+  //     is just a guess — if you forgot to log out yesterday, the backend
+  //     still has an open entry and will correctly reject a fresh login.
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        setUser(JSON.parse(stored));
-      } catch {
-        // Corrupted value — treat as no session
-        localStorage.removeItem(STORAGE_KEY);
+    const init = async () => {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      let parsedUser = null;
+
+      if (stored) {
+        try {
+          parsedUser = JSON.parse(stored);
+          setUser(parsedUser);
+        } catch {
+          // Corrupted value — treat as no session
+          localStorage.removeItem(STORAGE_KEY);
+        }
       }
-    }
-    setCheckingSession(false);
+
+      if (parsedUser?.userId) {
+        try {
+          const res = await fetch(
+            `${API_BASE_URL}/api/Attendance/Status?userId=${encodeURIComponent(parsedUser.userId)}`
+          );
+          const data = await res.json().catch(() => ({}));
+
+          if (res.ok) {
+            setLoggedIn(Boolean(data.loggedIn));
+          } else {
+            // If the status check itself fails, don't silently claim
+            // "logged out" — surface it so it's not mistaken for truth.
+            console.error("Status check failed:", data);
+          }
+        } catch (err) {
+          console.error("Status check error:", err);
+        }
+      }
+
+      setCheckingSession(false);
+    };
+
+    init();
   }, []);
 
   // ── Step 1: submit phone number → call SignupOtp, store the returned
