@@ -45,13 +45,10 @@ const formatDateOnly = (value) => {
   });
 };
 
-const formatDateTime = (value) => {
+const formatTimeOnly = (value) => {
   if (!value) return "—";
   const d = new Date(value);
-  return isNaN(d) ? "—" : d.toLocaleString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
+  return isNaN(d) ? "—" : d.toLocaleTimeString("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: true
@@ -501,8 +498,8 @@ export default function Attendance() {
                 <tr className="bg-gray-50 text-gray-500 text-left">
                   <th className="py-2 px-3 font-medium whitespace-nowrap">Date</th>
                   <th className="py-2 px-3 font-medium whitespace-nowrap">User ID</th>
-                  <th className="py-2 px-3 font-medium whitespace-nowrap">Login Date Time</th>
-                  <th className="py-2 px-3 font-medium whitespace-nowrap">Logout Date Time</th>
+                  <th className="py-2 px-3 font-medium whitespace-nowrap">Login Time</th>
+                  <th className="py-2 px-3 font-medium whitespace-nowrap">Logout Time</th>
                 </tr>
               </thead>
               <tbody>
@@ -514,10 +511,10 @@ export default function Attendance() {
                     <td className="py-2 px-3 whitespace-nowrap">{formatDateOnly(item.date)}</td>
                     <td className="py-2 px-3 whitespace-nowrap">{item.userId}</td>
                     <td className="py-2 px-3 text-green-600 whitespace-nowrap">
-                      {formatDateTime(item.loginDateTime)}
+                      {formatTimeOnly(item.loginDateTime)}
                     </td>
                     <td className="py-2 px-3 text-red-500 whitespace-nowrap">
-                      {formatDateTime(item.logoutDateTime)}
+                      {formatTimeOnly(item.logoutDateTime)}
                     </td>
                   </tr>
                 ))}
