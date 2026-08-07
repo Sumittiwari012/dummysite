@@ -30,10 +30,22 @@ export default function Accounts() {
   const [toDate, setToDate] = useState("");
   const [activeTab, setActiveTab] = useState("invoices");
 
+  // ── Invoices ──
   const [invoices, setInvoices] = useState([]);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [invoicesError, setInvoicesError] = useState("");
   const [expandedInvoice, setExpandedInvoice] = useState(null); // invoiceNumber currently expanded
+
+  // ── Returns ──
+  const [returns, setReturns] = useState([]);
+  const [returnsLoading, setReturnsLoading] = useState(false);
+  const [returnsError, setReturnsError] = useState("");
+  const [expandedReturn, setExpandedReturn] = useState(null); // returnInvoiceNumber currently expanded
+
+  // ── Wallet ──
+  const [wallet, setWallet] = useState(null); // { totalCredit, totalDebit, netChange, credits: [], debits: [] }
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [walletError, setWalletError] = useState("");
 
   const canSearch = fromDate && toDate;
 
@@ -66,11 +78,69 @@ export default function Accounts() {
     }
   };
 
-  const handleSearch = () => {
-    if (activeTab === "invoices") {
-      fetchInvoices();
+  const fetchReturns = async () => {
+    if (!canSearch) {
+      setReturnsError("Select both a from and to date.");
+      return;
     }
-    // Returns / Wallet: no backend endpoint yet — nothing to fetch.
+
+    setReturnsLoading(true);
+    setReturnsError("");
+    setExpandedReturn(null);
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/Accounts/ReturnAndReturnDetails?StartDate=${encodeURIComponent(fromDate)}&EndDate=${encodeURIComponent(toDate)}`
+      );
+      const data = await res.json().catch(() => ([]));
+
+      if (!res.ok) {
+        throw new Error(data.message || "Could not load returns.");
+      }
+
+      setReturns(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Fetch returns error:", err);
+      setReturnsError(err.message || "Could not load returns. Please try again.");
+    } finally {
+      setReturnsLoading(false);
+    }
+  };
+
+  const fetchWallet = async () => {
+    if (!canSearch) {
+      setWalletError("Select both a from and to date.");
+      return;
+    }
+
+    setWalletLoading(true);
+    setWalletError("");
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/Accounts/WalletTransactions?StartDate=${encodeURIComponent(fromDate)}&EndDate=${encodeURIComponent(toDate)}`
+      );
+      const data = await res.json().catch(() => (null));
+
+      if (!res.ok) {
+        throw new Error((data && data.message) || "Could not load wallet transactions.");
+      }
+
+      setWallet(data);
+    } catch (err) {
+      console.error("Fetch wallet error:", err);
+      setWalletError(err.message || "Could not load wallet transactions. Please try again.");
+    } finally {
+      setWalletLoading(false);
+    }
+  };
+
+  // One Search click fetches all three tabs with the same date range,
+  // so switching tabs afterward doesn't require searching again.
+  const handleSearch = () => {
+    fetchInvoices();
+    fetchReturns();
+    fetchWallet();
   };
 
   // ── Build a two-sheet workbook from the invoices already in state.
@@ -99,6 +169,7 @@ export default function Accounts() {
         "Invoice No.": inv.invoiceNumber,
         "Date": formatDate(inv.invoiceDate),
         "Product": d.productName,
+        "HSN Code": d.hsnCode || "",
         "Qty": d.quantity,
         "Price/Unit": d.salePricePerUnit,
         "Taxable": d.taxableAmount,
@@ -117,6 +188,80 @@ export default function Accounts() {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detailRows), "Invoice Details");
 
     const fileName = `Invoices_${fromDate || "start"}_to_${toDate || "end"}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
+  // ── Same two-sheet pattern as invoices, but for returns ──
+  const handleDownloadReturnsExcel = () => {
+    if (!returns.length) return;
+
+    const overviewRows = returns.map((r) => ({
+      "Invoice No.": r.invoiceNumber,
+      "Return Invoice No.": r.returnInvoiceNumber,
+      "Date": formatDate(r.returnDate),
+      "Mobile": r.customerMobileNumber || "",
+      "Taxable": r.totalTaxable,
+      "CGST": r.totalCgst,
+      "SGST": r.totalSgst,
+      "IGST": r.totalIgst,
+      "Tax": r.totalTax,
+      "Total (Incl. GST)": r.totalInclusive
+    }));
+
+    const detailRows = returns.flatMap((r) =>
+      (r.details || []).map((d) => ({
+        "Invoice No.": r.invoiceNumber,
+        "Return Invoice No.": r.returnInvoiceNumber,
+        "Date": formatDate(r.returnDate),
+        "Product": d.productName,
+        "HSN Code": d.hsnCode || "",
+        "Qty": d.quantity,
+        "Price/Unit": d.salePricePerUnit,
+        "Taxable": d.taxableAmount,
+        "CGST %": d.cgstPercent,
+        "CGST ₹": d.cgstValue,
+        "SGST %": d.sgstPercent,
+        "SGST ₹": d.sgstValue,
+        "IGST %": d.igstPercent,
+        "IGST ₹": d.igstValue,
+        "Total": d.inclusiveTotal
+      }))
+    );
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(overviewRows), "Returns");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detailRows), "Return Details");
+
+    const fileName = `Returns_${fromDate || "start"}_to_${toDate || "end"}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
+  // ── Wallet: credits + debits, each on their own sheet ──
+  const handleDownloadWalletExcel = () => {
+    if (!wallet) return;
+
+    const creditRows = (wallet.credits || []).map((c) => ({
+      "Invoice No.": c.invoiceNumber,
+      "Return Invoice No.": c.returnInvoiceNumber,
+      "Customer": c.customerName,
+      "Mobile": c.customerMobileNumber,
+      "Date": formatDate(c.date),
+      "Amount": c.amount
+    }));
+
+    const debitRows = (wallet.debits || []).map((d) => ({
+      "Invoice No.": d.invoiceNumber,
+      "Customer": d.customerName,
+      "Mobile": d.customerMobileNumber,
+      "Date": formatDate(d.date),
+      "Amount": d.amount
+    }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(creditRows), "Wallet Credits");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(debitRows), "Wallet Debits");
+
+    const fileName = `Wallet_${fromDate || "start"}_to_${toDate || "end"}.xlsx`;
     XLSX.writeFile(wb, fileName);
   };
 
@@ -178,17 +323,28 @@ export default function Accounts() {
 
         <button
           onClick={handleSearch}
-          disabled={!canSearch || invoicesLoading}
+          disabled={
+            !canSearch ||
+            invoicesLoading ||
+            returnsLoading ||
+            walletLoading
+          }
           style={{
             padding: "10px 20px",
-            background: !canSearch || invoicesLoading ? "#90b8e0" : "#1976d2",
+            background:
+              !canSearch || invoicesLoading || returnsLoading || walletLoading
+                ? "#90b8e0"
+                : "#1976d2",
             color: "#fff",
             border: "none",
             borderRadius: "4px",
-            cursor: !canSearch || invoicesLoading ? "not-allowed" : "pointer"
+            cursor:
+              !canSearch || invoicesLoading || returnsLoading || walletLoading
+                ? "not-allowed"
+                : "pointer"
           }}
         >
-          {invoicesLoading ? "Searching..." : "Search"}
+          {invoicesLoading || returnsLoading || walletLoading ? "Searching..." : "Search"}
         </button>
       </div>
 
@@ -229,18 +385,7 @@ export default function Accounts() {
               {invoices.length > 0 && (
                 <button
                   onClick={handleDownloadExcel}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    padding: "8px 16px",
-                    background: "#2e7d32",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer",
-                    fontSize: "0.9em"
-                  }}
+                  style={downloadBtnStyle}
                 >
                   <Download size={16} />
                   Download Excel
@@ -255,10 +400,7 @@ export default function Accounts() {
             ) : invoicesError ? (
               <div>
                 <p style={{ color: "#c62828" }}>{invoicesError}</p>
-                <button
-                  onClick={fetchInvoices}
-                  style={{ color: "#1976d2", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}
-                >
+                <button onClick={fetchInvoices} style={retryBtnStyle}>
                   Retry
                 </button>
               </div>
@@ -306,6 +448,7 @@ export default function Accounts() {
                                 <thead>
                                   <tr>
                                     <th style={thStyleSmall}>Product</th>
+                                    <th style={thStyleSmall}>HSN Code</th>
                                     <th style={thStyleSmall}>Qty</th>
                                     <th style={thStyleSmall}>Price/Unit</th>
                                     <th style={thStyleSmall}>Taxable</th>
@@ -322,6 +465,7 @@ export default function Accounts() {
                                   {inv.details.map((d) => (
                                     <tr key={d.detailId}>
                                       <td style={tdStyleSmall}>{d.productName}</td>
+                                      <td style={tdStyleSmall}>{d.hsnCode || "—"}</td>
                                       <td style={tdStyleSmall}>{d.quantity}</td>
                                       <td style={tdStyleSmall}>{formatCurrency(d.salePricePerUnit)}</td>
                                       <td style={tdStyleSmall}>{formatCurrency(d.taxableAmount)}</td>
@@ -350,19 +494,238 @@ export default function Accounts() {
 
         {activeTab === "returns" && (
           <>
-            <h3 style={{ marginTop: 0 }}>Returns</h3>
-            <p style={{ color: "#777" }}>
-              Returns aren't wired up to a backend endpoint yet — let me know when one's ready and I'll connect this tab the same way as Invoices.
-            </p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+              <h3 style={{ marginTop: 0, marginBottom: 0 }}>Returns</h3>
+              {returns.length > 0 && (
+                <button
+                  onClick={handleDownloadReturnsExcel}
+                  style={downloadBtnStyle}
+                >
+                  <Download size={16} />
+                  Download Excel
+                </button>
+              )}
+            </div>
+
+            {!canSearch ? (
+              <p style={{ color: "#777" }}>Select a date range and tap Search.</p>
+            ) : returnsLoading ? (
+              <p style={{ color: "#777" }}>Loading returns...</p>
+            ) : returnsError ? (
+              <div>
+                <p style={{ color: "#c62828" }}>{returnsError}</p>
+                <button onClick={fetchReturns} style={retryBtnStyle}>
+                  Retry
+                </button>
+              </div>
+            ) : returns.length === 0 ? (
+              <p style={{ color: "#777" }}>No returns found for this date range.</p>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "12px" }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}></th>
+                    <th style={thStyle}>Invoice No.</th>
+                    <th style={thStyle}>Return Invoice No.</th>
+                    <th style={thStyle}>Date</th>
+                    <th style={thStyle}>Mobile</th>
+                    <th style={thStyle}>Taxable</th>
+                    <th style={thStyle}>Tax</th>
+                    <th style={thStyle}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {returns.map((r) => {
+                    const isExpanded = expandedReturn === r.returnInvoiceNumber;
+                    return (
+                      <React.Fragment key={r.returnInvoiceNumber}>
+                        <tr
+                          onClick={() =>
+                            setExpandedReturn(isExpanded ? null : r.returnInvoiceNumber)
+                          }
+                          style={{ cursor: "pointer" }}
+                        >
+                          <td style={{ ...tdStyle, width: "28px" }}>
+                            {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          </td>
+                          <td style={tdStyle}>{r.invoiceNumber}</td>
+                          <td style={tdStyle}>{r.returnInvoiceNumber}</td>
+                          <td style={tdStyle}>{formatDate(r.returnDate)}</td>
+                          <td style={tdStyle}>{r.customerMobileNumber || "—"}</td>
+                          <td style={tdStyle}>{formatCurrency(r.totalTaxable)}</td>
+                          <td style={tdStyle}>{formatCurrency(r.totalTax)}</td>
+                          <td style={tdStyle}>{formatCurrency(r.totalInclusive)}</td>
+                        </tr>
+
+                        {isExpanded && (
+                          <tr>
+                            <td style={{ ...tdStyle, background: "#fafafa" }} colSpan={8}>
+                              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                <thead>
+                                  <tr>
+                                    <th style={thStyleSmall}>Product</th>
+                                    <th style={thStyleSmall}>HSN Code</th>
+                                    <th style={thStyleSmall}>Qty</th>
+                                    <th style={thStyleSmall}>Price/Unit</th>
+                                    <th style={thStyleSmall}>Taxable</th>
+                                    <th style={thStyleSmall}>CGST %</th>
+                                    <th style={thStyleSmall}>CGST ₹</th>
+                                    <th style={thStyleSmall}>SGST %</th>
+                                    <th style={thStyleSmall}>SGST ₹</th>
+                                    <th style={thStyleSmall}>IGST %</th>
+                                    <th style={thStyleSmall}>IGST ₹</th>
+                                    <th style={thStyleSmall}>Total</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {r.details.map((d) => (
+                                    <tr key={d.detailId}>
+                                      <td style={tdStyleSmall}>{d.productName}</td>
+                                      <td style={tdStyleSmall}>{d.hsnCode || "—"}</td>
+                                      <td style={tdStyleSmall}>{d.quantity}</td>
+                                      <td style={tdStyleSmall}>{formatCurrency(d.salePricePerUnit)}</td>
+                                      <td style={tdStyleSmall}>{formatCurrency(d.taxableAmount)}</td>
+                                      <td style={tdStyleSmall}>{d.cgstPercent}%</td>
+                                      <td style={tdStyleSmall}>{formatCurrency(d.cgstValue)}</td>
+                                      <td style={tdStyleSmall}>{d.sgstPercent}%</td>
+                                      <td style={tdStyleSmall}>{formatCurrency(d.sgstValue)}</td>
+                                      <td style={tdStyleSmall}>{d.igstPercent}%</td>
+                                      <td style={tdStyleSmall}>{formatCurrency(d.igstValue)}</td>
+                                      <td style={tdStyleSmall}>{formatCurrency(d.inclusiveTotal)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </>
         )}
 
         {activeTab === "wallet" && (
           <>
-            <h3 style={{ marginTop: 0 }}>Wallet</h3>
-            <p style={{ color: "#777" }}>
-              Wallet isn't wired up to a backend endpoint yet — let me know when one's ready and I'll connect this tab the same way as Invoices.
-            </p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+              <h3 style={{ marginTop: 0, marginBottom: 0 }}>Wallet</h3>
+              {wallet && (wallet.credits?.length > 0 || wallet.debits?.length > 0) && (
+                <button
+                  onClick={handleDownloadWalletExcel}
+                  style={downloadBtnStyle}
+                >
+                  <Download size={16} />
+                  Download Excel
+                </button>
+              )}
+            </div>
+
+            {!canSearch ? (
+              <p style={{ color: "#777" }}>Select a date range and tap Search.</p>
+            ) : walletLoading ? (
+              <p style={{ color: "#777" }}>Loading wallet transactions...</p>
+            ) : walletError ? (
+              <div>
+                <p style={{ color: "#c62828" }}>{walletError}</p>
+                <button onClick={fetchWallet} style={retryBtnStyle}>
+                  Retry
+                </button>
+              </div>
+            ) : !wallet || (wallet.credits.length === 0 && wallet.debits.length === 0) ? (
+              <p style={{ color: "#777" }}>No wallet transactions found for this date range.</p>
+            ) : (
+              <>
+                {/* Summary strip */}
+                <div style={{ display: "flex", gap: "16px", marginBottom: "20px" }}>
+                  <div style={summaryCardStyle}>
+                    <div style={summaryLabelStyle}>Total Credit</div>
+                    <div style={{ ...summaryValueStyle, color: "#2e7d32" }}>
+                      {formatCurrency(wallet.totalCredit)}
+                    </div>
+                  </div>
+                  <div style={summaryCardStyle}>
+                    <div style={summaryLabelStyle}>Total Debit</div>
+                    <div style={{ ...summaryValueStyle, color: "#c62828" }}>
+                      {formatCurrency(wallet.totalDebit)}
+                    </div>
+                  </div>
+                  <div style={summaryCardStyle}>
+                    <div style={summaryLabelStyle}>Net Change</div>
+                    <div
+                      style={{
+                        ...summaryValueStyle,
+                        color: wallet.netChange >= 0 ? "#2e7d32" : "#c62828"
+                      }}
+                    >
+                      {formatCurrency(wallet.netChange)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Credits */}
+                <h4 style={{ marginBottom: "8px" }}>Credits (Returns)</h4>
+                {wallet.credits.length === 0 ? (
+                  <p style={{ color: "#777", marginTop: 0 }}>No credits in this range.</p>
+                ) : (
+                  <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "24px" }}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>Invoice No.</th>
+                        <th style={thStyle}>Return Invoice No.</th>
+                        <th style={thStyle}>Customer</th>
+                        <th style={thStyle}>Mobile</th>
+                        <th style={thStyle}>Date</th>
+                        <th style={thStyle}>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {wallet.credits.map((c, i) => (
+                        <tr key={`${c.returnInvoiceNumber}-${i}`}>
+                          <td style={tdStyle}>{c.invoiceNumber}</td>
+                          <td style={tdStyle}>{c.returnInvoiceNumber}</td>
+                          <td style={tdStyle}>{c.customerName || "—"}</td>
+                          <td style={tdStyle}>{c.customerMobileNumber || "—"}</td>
+                          <td style={tdStyle}>{formatDate(c.date)}</td>
+                          <td style={{ ...tdStyle, color: "#2e7d32" }}>+{formatCurrency(c.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                {/* Debits */}
+                <h4 style={{ marginBottom: "8px" }}>Debits (Wallet Payments)</h4>
+                {wallet.debits.length === 0 ? (
+                  <p style={{ color: "#777", marginTop: 0 }}>No debits in this range.</p>
+                ) : (
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>Invoice No.</th>
+                        <th style={thStyle}>Customer</th>
+                        <th style={thStyle}>Mobile</th>
+                        <th style={thStyle}>Date</th>
+                        <th style={thStyle}>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {wallet.debits.map((d, i) => (
+                        <tr key={`${d.invoiceNumber}-${i}`}>
+                          <td style={tdStyle}>{d.invoiceNumber}</td>
+                          <td style={tdStyle}>{d.customerName || "—"}</td>
+                          <td style={tdStyle}>{d.customerMobileNumber || "—"}</td>
+                          <td style={tdStyle}>{formatDate(d.date)}</td>
+                          <td style={{ ...tdStyle, color: "#c62828" }}>-{formatCurrency(d.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            )}
           </>
         )}
       </div>
@@ -394,4 +757,44 @@ const tdStyleSmall = {
   border: "1px solid #eee",
   padding: "6px 8px",
   fontSize: "0.85em"
+};
+
+const downloadBtnStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: "6px",
+  padding: "8px 16px",
+  background: "#2e7d32",
+  color: "#fff",
+  border: "none",
+  borderRadius: "4px",
+  cursor: "pointer",
+  fontSize: "0.9em"
+};
+
+const retryBtnStyle = {
+  color: "#1976d2",
+  background: "none",
+  border: "none",
+  cursor: "pointer",
+  textDecoration: "underline",
+  padding: 0
+};
+
+const summaryCardStyle = {
+  flex: 1,
+  background: "#f5f5f5",
+  borderRadius: "8px",
+  padding: "16px",
+  textAlign: "center"
+};
+
+const summaryLabelStyle = {
+  fontSize: "0.85em",
+  color: "#777",
+  marginBottom: "6px"
+};
+const summaryValueStyle = {
+  fontSize: "1.3em",
+  fontWeight: 600
 };
