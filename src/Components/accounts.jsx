@@ -143,6 +143,26 @@ export default function Accounts() {
     fetchWallet();
   };
 
+  // ── Rolled-up totals across all invoices/returns currently loaded ──
+  const invoiceTotals = invoices.reduce(
+    (acc, inv) => ({
+      taxable: acc.taxable + (inv.totalTaxable || 0),
+      tax: acc.tax + (inv.totalTax || 0),
+      discount: acc.discount + (inv.discount || 0),
+      total: acc.total + (inv.totalInclusive || 0)
+    }),
+    { taxable: 0, tax: 0, discount: 0, total: 0 }
+  );
+
+  const returnTotals = returns.reduce(
+    (acc, r) => ({
+      taxable: acc.taxable + (r.totalTaxable || 0),
+      tax: acc.tax + (r.totalTax || 0),
+      total: acc.total + (r.totalInclusive || 0)
+    }),
+    { taxable: 0, tax: 0, total: 0 }
+  );
+
   // ── Build a two-sheet workbook from the invoices already in state.
   //     Sheet 1: one row per invoice (overview totals).
   //     Sheet 2: one row per line item, flattened out of each
@@ -407,87 +427,115 @@ export default function Accounts() {
             ) : invoices.length === 0 ? (
               <p style={{ color: "#777" }}>No invoices found for this date range.</p>
             ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "12px" }}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}></th>
-                    <th style={thStyle}>Invoice No.</th>
-                    <th style={thStyle}>Date</th>
-                    <th style={thStyle}>Mobile</th>
-                    <th style={thStyle}>Taxable</th>
-                    <th style={thStyle}>Tax</th>
-                    <th style={thStyle}>Discount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {invoices.map((inv) => {
-                    const isExpanded = expandedInvoice === inv.invoiceNumber;
-                    return (
-                      <React.Fragment key={inv.invoiceNumber}>
-                        <tr
-                          onClick={() =>
-                            setExpandedInvoice(isExpanded ? null : inv.invoiceNumber)
-                          }
-                          style={{ cursor: "pointer" }}
-                        >
-                          <td style={{ ...tdStyle, width: "28px" }}>
-                            {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                          </td>
-                          <td style={tdStyle}>{inv.invoiceNumber}</td>
-                          <td style={tdStyle}>{formatDate(inv.invoiceDate)}</td>
-                          <td style={tdStyle}>{inv.customerMobileNumber || "—"}</td>
-                          <td style={tdStyle}>{formatCurrency(inv.totalTaxable)}</td>
-                          <td style={tdStyle}>{formatCurrency(inv.totalTax)}</td>
-                          <td style={tdStyle}>{formatCurrency(inv.discount)}</td>
-                        </tr>
+              <>
+                {/* Summary strip: Taxable, Tax, Discount, Total — rolled up across all invoices in range */}
+                <div style={{ display: "flex", gap: "16px", marginBottom: "20px" }}>
+                  <div style={summaryCardStyle}>
+                    <div style={summaryLabelStyle}>Total Taxable</div>
+                    <div style={summaryValueStyle}>{formatCurrency(invoiceTotals.taxable)}</div>
+                  </div>
+                  <div style={summaryCardStyle}>
+                    <div style={summaryLabelStyle}>Total Tax</div>
+                    <div style={summaryValueStyle}>{formatCurrency(invoiceTotals.tax)}</div>
+                  </div>
+                  <div style={summaryCardStyle}>
+                    <div style={summaryLabelStyle}>Total Discount</div>
+                    <div style={{ ...summaryValueStyle, color: "#c62828" }}>
+                      {formatCurrency(invoiceTotals.discount)}
+                    </div>
+                  </div>
+                  <div style={summaryCardStyle}>
+                    <div style={summaryLabelStyle}>Total (Incl. GST)</div>
+                    <div style={{ ...summaryValueStyle, color: "#1976d2" }}>
+                      {formatCurrency(invoiceTotals.total)}
+                    </div>
+                  </div>
+                </div>
 
-                        {isExpanded && (
-                          <tr>
-                            <td style={{ ...tdStyle, background: "#fafafa" }} colSpan={7}>
-                              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                <thead>
-                                  <tr>
-                                    <th style={thStyleSmall}>Product</th>
-                                    <th style={thStyleSmall}>HSN Code</th>
-                                    <th style={thStyleSmall}>Qty</th>
-                                    <th style={thStyleSmall}>Price/Unit</th>
-                                    <th style={thStyleSmall}>Taxable</th>
-                                    <th style={thStyleSmall}>CGST %</th>
-                                    <th style={thStyleSmall}>CGST ₹</th>
-                                    <th style={thStyleSmall}>SGST %</th>
-                                    <th style={thStyleSmall}>SGST ₹</th>
-                                    <th style={thStyleSmall}>IGST %</th>
-                                    <th style={thStyleSmall}>IGST ₹</th>
-                                    <th style={thStyleSmall}>Total</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {inv.details.map((d) => (
-                                    <tr key={d.detailId}>
-                                      <td style={tdStyleSmall}>{d.productName}</td>
-                                      <td style={tdStyleSmall}>{d.hsnCode || "—"}</td>
-                                      <td style={tdStyleSmall}>{d.quantity}</td>
-                                      <td style={tdStyleSmall}>{formatCurrency(d.salePricePerUnit)}</td>
-                                      <td style={tdStyleSmall}>{formatCurrency(d.taxableAmount)}</td>
-                                      <td style={tdStyleSmall}>{d.cgstPercent}%</td>
-                                      <td style={tdStyleSmall}>{formatCurrency(d.cgstValue)}</td>
-                                      <td style={tdStyleSmall}>{d.sgstPercent}%</td>
-                                      <td style={tdStyleSmall}>{formatCurrency(d.sgstValue)}</td>
-                                      <td style={tdStyleSmall}>{d.igstPercent}%</td>
-                                      <td style={tdStyleSmall}>{formatCurrency(d.igstValue)}</td>
-                                      <td style={tdStyleSmall}>{formatCurrency(d.inclusiveTotal)}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "12px" }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}></th>
+                      <th style={thStyle}>Invoice No.</th>
+                      <th style={thStyle}>Date</th>
+                      <th style={thStyle}>Mobile</th>
+                      <th style={thStyle}>Taxable</th>
+                      <th style={thStyle}>Tax</th>
+                      <th style={thStyle}>Discount</th>
+                      <th style={thStyle}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoices.map((inv) => {
+                      const isExpanded = expandedInvoice === inv.invoiceNumber;
+                      return (
+                        <React.Fragment key={inv.invoiceNumber}>
+                          <tr
+                            onClick={() =>
+                              setExpandedInvoice(isExpanded ? null : inv.invoiceNumber)
+                            }
+                            style={{ cursor: "pointer" }}
+                          >
+                            <td style={{ ...tdStyle, width: "28px" }}>
+                              {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                             </td>
+                            <td style={tdStyle}>{inv.invoiceNumber}</td>
+                            <td style={tdStyle}>{formatDate(inv.invoiceDate)}</td>
+                            <td style={tdStyle}>{inv.customerMobileNumber || "—"}</td>
+                            <td style={tdStyle}>{formatCurrency(inv.totalTaxable)}</td>
+                            <td style={tdStyle}>{formatCurrency(inv.totalTax)}</td>
+                            <td style={tdStyle}>{formatCurrency(inv.discount)}</td>
+                            <td style={tdStyle}>{formatCurrency(inv.totalInclusive)}</td>
                           </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
+
+                          {isExpanded && (
+                            <tr>
+                              <td style={{ ...tdStyle, background: "#fafafa" }} colSpan={8}>
+                                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                  <thead>
+                                    <tr>
+                                      <th style={thStyleSmall}>Product</th>
+                                      <th style={thStyleSmall}>HSN Code</th>
+                                      <th style={thStyleSmall}>Qty</th>
+                                      <th style={thStyleSmall}>Price/Unit</th>
+                                      <th style={thStyleSmall}>Taxable</th>
+                                      <th style={thStyleSmall}>CGST %</th>
+                                      <th style={thStyleSmall}>CGST ₹</th>
+                                      <th style={thStyleSmall}>SGST %</th>
+                                      <th style={thStyleSmall}>SGST ₹</th>
+                                      <th style={thStyleSmall}>IGST %</th>
+                                      <th style={thStyleSmall}>IGST ₹</th>
+                                      <th style={thStyleSmall}>Total</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {inv.details.map((d) => (
+                                      <tr key={d.detailId}>
+                                        <td style={tdStyleSmall}>{d.productName}</td>
+                                        <td style={tdStyleSmall}>{d.hsnCode || "—"}</td>
+                                        <td style={tdStyleSmall}>{d.quantity}</td>
+                                        <td style={tdStyleSmall}>{formatCurrency(d.salePricePerUnit)}</td>
+                                        <td style={tdStyleSmall}>{formatCurrency(d.taxableAmount)}</td>
+                                        <td style={tdStyleSmall}>{d.cgstPercent}%</td>
+                                        <td style={tdStyleSmall}>{formatCurrency(d.cgstValue)}</td>
+                                        <td style={tdStyleSmall}>{d.sgstPercent}%</td>
+                                        <td style={tdStyleSmall}>{formatCurrency(d.sgstValue)}</td>
+                                        <td style={tdStyleSmall}>{d.igstPercent}%</td>
+                                        <td style={tdStyleSmall}>{formatCurrency(d.igstValue)}</td>
+                                        <td style={tdStyleSmall}>{formatCurrency(d.inclusiveTotal)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </>
             )}
           </>
         )}
@@ -521,89 +569,109 @@ export default function Accounts() {
             ) : returns.length === 0 ? (
               <p style={{ color: "#777" }}>No returns found for this date range.</p>
             ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "12px" }}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}></th>
-                    <th style={thStyle}>Invoice No.</th>
-                    <th style={thStyle}>Return Invoice No.</th>
-                    <th style={thStyle}>Date</th>
-                    <th style={thStyle}>Mobile</th>
-                    <th style={thStyle}>Taxable</th>
-                    <th style={thStyle}>Tax</th>
-                    <th style={thStyle}>Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {returns.map((r) => {
-                    const isExpanded = expandedReturn === r.returnInvoiceNumber;
-                    return (
-                      <React.Fragment key={r.returnInvoiceNumber}>
-                        <tr
-                          onClick={() =>
-                            setExpandedReturn(isExpanded ? null : r.returnInvoiceNumber)
-                          }
-                          style={{ cursor: "pointer" }}
-                        >
-                          <td style={{ ...tdStyle, width: "28px" }}>
-                            {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                          </td>
-                          <td style={tdStyle}>{r.invoiceNumber}</td>
-                          <td style={tdStyle}>{r.returnInvoiceNumber}</td>
-                          <td style={tdStyle}>{formatDate(r.returnDate)}</td>
-                          <td style={tdStyle}>{r.customerMobileNumber || "—"}</td>
-                          <td style={tdStyle}>{formatCurrency(r.totalTaxable)}</td>
-                          <td style={tdStyle}>{formatCurrency(r.totalTax)}</td>
-                          <td style={tdStyle}>{formatCurrency(r.totalInclusive)}</td>
-                        </tr>
+              <>
+                {/* Summary strip: Taxable, Tax, Total — no discount, returns don't carry one */}
+                <div style={{ display: "flex", gap: "16px", marginBottom: "20px" }}>
+                  <div style={summaryCardStyle}>
+                    <div style={summaryLabelStyle}>Total Taxable</div>
+                    <div style={summaryValueStyle}>{formatCurrency(returnTotals.taxable)}</div>
+                  </div>
+                  <div style={summaryCardStyle}>
+                    <div style={summaryLabelStyle}>Total Tax</div>
+                    <div style={summaryValueStyle}>{formatCurrency(returnTotals.tax)}</div>
+                  </div>
+                  <div style={summaryCardStyle}>
+                    <div style={summaryLabelStyle}>Total (Incl. GST)</div>
+                    <div style={{ ...summaryValueStyle, color: "#1976d2" }}>
+                      {formatCurrency(returnTotals.total)}
+                    </div>
+                  </div>
+                </div>
 
-                        {isExpanded && (
-                          <tr>
-                            <td style={{ ...tdStyle, background: "#fafafa" }} colSpan={8}>
-                              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                <thead>
-                                  <tr>
-                                    <th style={thStyleSmall}>Product</th>
-                                    <th style={thStyleSmall}>HSN Code</th>
-                                    <th style={thStyleSmall}>Qty</th>
-                                    <th style={thStyleSmall}>Price/Unit</th>
-                                    <th style={thStyleSmall}>Taxable</th>
-                                    <th style={thStyleSmall}>CGST %</th>
-                                    <th style={thStyleSmall}>CGST ₹</th>
-                                    <th style={thStyleSmall}>SGST %</th>
-                                    <th style={thStyleSmall}>SGST ₹</th>
-                                    <th style={thStyleSmall}>IGST %</th>
-                                    <th style={thStyleSmall}>IGST ₹</th>
-                                    <th style={thStyleSmall}>Total</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {r.details.map((d) => (
-                                    <tr key={d.detailId}>
-                                      <td style={tdStyleSmall}>{d.productName}</td>
-                                      <td style={tdStyleSmall}>{d.hsnCode || "—"}</td>
-                                      <td style={tdStyleSmall}>{d.quantity}</td>
-                                      <td style={tdStyleSmall}>{formatCurrency(d.salePricePerUnit)}</td>
-                                      <td style={tdStyleSmall}>{formatCurrency(d.taxableAmount)}</td>
-                                      <td style={tdStyleSmall}>{d.cgstPercent}%</td>
-                                      <td style={tdStyleSmall}>{formatCurrency(d.cgstValue)}</td>
-                                      <td style={tdStyleSmall}>{d.sgstPercent}%</td>
-                                      <td style={tdStyleSmall}>{formatCurrency(d.sgstValue)}</td>
-                                      <td style={tdStyleSmall}>{d.igstPercent}%</td>
-                                      <td style={tdStyleSmall}>{formatCurrency(d.igstValue)}</td>
-                                      <td style={tdStyleSmall}>{formatCurrency(d.inclusiveTotal)}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "12px" }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}></th>
+                      <th style={thStyle}>Invoice No.</th>
+                      <th style={thStyle}>Return Invoice No.</th>
+                      <th style={thStyle}>Date</th>
+                      <th style={thStyle}>Mobile</th>
+                      <th style={thStyle}>Taxable</th>
+                      <th style={thStyle}>Tax</th>
+                      <th style={thStyle}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {returns.map((r) => {
+                      const isExpanded = expandedReturn === r.returnInvoiceNumber;
+                      return (
+                        <React.Fragment key={r.returnInvoiceNumber}>
+                          <tr
+                            onClick={() =>
+                              setExpandedReturn(isExpanded ? null : r.returnInvoiceNumber)
+                            }
+                            style={{ cursor: "pointer" }}
+                          >
+                            <td style={{ ...tdStyle, width: "28px" }}>
+                              {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                             </td>
+                            <td style={tdStyle}>{r.invoiceNumber}</td>
+                            <td style={tdStyle}>{r.returnInvoiceNumber}</td>
+                            <td style={tdStyle}>{formatDate(r.returnDate)}</td>
+                            <td style={tdStyle}>{r.customerMobileNumber || "—"}</td>
+                            <td style={tdStyle}>{formatCurrency(r.totalTaxable)}</td>
+                            <td style={tdStyle}>{formatCurrency(r.totalTax)}</td>
+                            <td style={tdStyle}>{formatCurrency(r.totalInclusive)}</td>
                           </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
+
+                          {isExpanded && (
+                            <tr>
+                              <td style={{ ...tdStyle, background: "#fafafa" }} colSpan={8}>
+                                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                  <thead>
+                                    <tr>
+                                      <th style={thStyleSmall}>Product</th>
+                                      <th style={thStyleSmall}>HSN Code</th>
+                                      <th style={thStyleSmall}>Qty</th>
+                                      <th style={thStyleSmall}>Price/Unit</th>
+                                      <th style={thStyleSmall}>Taxable</th>
+                                      <th style={thStyleSmall}>CGST %</th>
+                                      <th style={thStyleSmall}>CGST ₹</th>
+                                      <th style={thStyleSmall}>SGST %</th>
+                                      <th style={thStyleSmall}>SGST ₹</th>
+                                      <th style={thStyleSmall}>IGST %</th>
+                                      <th style={thStyleSmall}>IGST ₹</th>
+                                      <th style={thStyleSmall}>Total</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {r.details.map((d) => (
+                                      <tr key={d.detailId}>
+                                        <td style={tdStyleSmall}>{d.productName}</td>
+                                        <td style={tdStyleSmall}>{d.hsnCode || "—"}</td>
+                                        <td style={tdStyleSmall}>{d.quantity}</td>
+                                        <td style={tdStyleSmall}>{formatCurrency(d.salePricePerUnit)}</td>
+                                        <td style={tdStyleSmall}>{formatCurrency(d.taxableAmount)}</td>
+                                        <td style={tdStyleSmall}>{d.cgstPercent}%</td>
+                                        <td style={tdStyleSmall}>{formatCurrency(d.cgstValue)}</td>
+                                        <td style={tdStyleSmall}>{d.sgstPercent}%</td>
+                                        <td style={tdStyleSmall}>{formatCurrency(d.sgstValue)}</td>
+                                        <td style={tdStyleSmall}>{d.igstPercent}%</td>
+                                        <td style={tdStyleSmall}>{formatCurrency(d.igstValue)}</td>
+                                        <td style={tdStyleSmall}>{formatCurrency(d.inclusiveTotal)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </>
             )}
           </>
         )}
@@ -653,7 +721,7 @@ export default function Accounts() {
                     </div>
                   </div>
                   <div style={summaryCardStyle}>
-                    <div style={summaryLabelStyle}>Net Change</div>
+                    <div style={summaryLabelStyle}>Balance</div>
                     <div
                       style={{
                         ...summaryValueStyle,
@@ -794,6 +862,7 @@ const summaryLabelStyle = {
   color: "#777",
   marginBottom: "6px"
 };
+
 const summaryValueStyle = {
   fontSize: "1.3em",
   fontWeight: 600
