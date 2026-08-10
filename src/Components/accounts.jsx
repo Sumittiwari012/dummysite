@@ -15,6 +15,22 @@ const formatCurrency = (value) =>
     ? value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     : "—";
 
+// Profit is shown as-is — real sign, no forcing everything positive.
+// toLocaleString already prefixes negatives with "-", so this is just
+// formatCurrency without the Math.abs() a signed value needs.
+const formatSigned = (value) =>
+  typeof value === "number" ? value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
+
+// Red for a loss (negative), green for a gain (positive/zero). Used in the Invoices tab.
+const profitColor = (value) => (typeof value === "number" && value < 0 ? "#c62828" : "#2e7d32");
+
+// Returns-only profit formatter — trailing minus sign (accounting style,
+// e.g. "1,234.56-") since that profit is being reversed/given back.
+const formatProfit = (value) => {
+  if (typeof value !== "number") return "—";
+  return `${formatCurrency(Math.abs(value))}-`;
+};
+
 const formatDate = (value) => {
   if (!value) return "—";
   const d = new Date(value);
@@ -149,18 +165,20 @@ export default function Accounts() {
       taxable: acc.taxable + (inv.totalTaxable || 0),
       tax: acc.tax + (inv.totalTax || 0),
       discount: acc.discount + (inv.discount || 0),
-      total: acc.total + (inv.totalInclusive || 0)
+      total: acc.total + (inv.totalInclusive || 0),
+      profit: acc.profit + (inv.totalProfit || 0)
     }),
-    { taxable: 0, tax: 0, discount: 0, total: 0 }
+    { taxable: 0, tax: 0, discount: 0, total: 0, profit: 0 }
   );
 
   const returnTotals = returns.reduce(
     (acc, r) => ({
       taxable: acc.taxable + (r.totalTaxable || 0),
       tax: acc.tax + (r.totalTax || 0),
-      total: acc.total + (r.totalInclusive || 0)
+      total: acc.total + (r.totalInclusive || 0),
+      profit: acc.profit + (r.totalProfit || 0)
     }),
-    { taxable: 0, tax: 0, total: 0 }
+    { taxable: 0, tax: 0, total: 0, profit: 0 }
   );
 
   // ── Build a two-sheet workbook from the invoices already in state.
@@ -181,7 +199,8 @@ export default function Accounts() {
       "IGST": inv.totalIgst,
       "Tax": inv.totalTax,
       "Discount": inv.discount,
-      "Total (Incl. GST)": inv.totalInclusive
+      "Total (Incl. GST)": inv.totalInclusive,
+      "Profit": inv.totalProfit
     }));
 
     const detailRows = invoices.flatMap((inv) =>
@@ -199,7 +218,8 @@ export default function Accounts() {
         "SGST ₹": d.sgstValue,
         "IGST %": d.igstPercent,
         "IGST ₹": d.igstValue,
-        "Total": d.inclusiveTotal
+        "Total": d.inclusiveTotal,
+        "Profit": d.profit
       }))
     );
 
@@ -225,7 +245,8 @@ export default function Accounts() {
       "SGST": r.totalSgst,
       "IGST": r.totalIgst,
       "Tax": r.totalTax,
-      "Total (Incl. GST)": r.totalInclusive
+      "Total (Incl. GST)": r.totalInclusive,
+      "Profit Reversed": r.totalProfit
     }));
 
     const detailRows = returns.flatMap((r) =>
@@ -244,7 +265,8 @@ export default function Accounts() {
         "SGST ₹": d.sgstValue,
         "IGST %": d.igstPercent,
         "IGST ₹": d.igstValue,
-        "Total": d.inclusiveTotal
+        "Total": d.inclusiveTotal,
+        "Profit Reversed": d.profit
       }))
     );
 
@@ -428,7 +450,7 @@ export default function Accounts() {
               <p style={{ color: "#777" }}>No invoices found for this date range.</p>
             ) : (
               <>
-                {/* Summary strip: Taxable, Tax, Discount, Total — rolled up across all invoices in range */}
+                {/* Summary strip: Taxable, Tax, Discount, Total, Profit — rolled up across all invoices in range */}
                 <div style={{ display: "flex", gap: "16px", marginBottom: "20px" }}>
                   <div style={summaryCardStyle}>
                     <div style={summaryLabelStyle}>Total Taxable</div>
@@ -450,6 +472,12 @@ export default function Accounts() {
                       {formatCurrency(invoiceTotals.total)}
                     </div>
                   </div>
+                  <div style={summaryCardStyle}>
+                    <div style={summaryLabelStyle}>Total Profit</div>
+                    <div style={{ ...summaryValueStyle, color: profitColor(invoiceTotals.profit) }}>
+                      {formatSigned(invoiceTotals.profit)}
+                    </div>
+                  </div>
                 </div>
 
                 <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "12px" }}>
@@ -463,6 +491,7 @@ export default function Accounts() {
                       <th style={thStyle}>Tax</th>
                       <th style={thStyle}>Discount</th>
                       <th style={thStyle}>Total</th>
+                      <th style={thStyle}>Profit</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -486,11 +515,12 @@ export default function Accounts() {
                             <td style={tdStyle}>{formatCurrency(inv.totalTax)}</td>
                             <td style={tdStyle}>{formatCurrency(inv.discount)}</td>
                             <td style={tdStyle}>{formatCurrency(inv.totalInclusive)}</td>
+                            <td style={{ ...tdStyle, color: profitColor(inv.totalProfit) }}>{formatSigned(inv.totalProfit)}</td>
                           </tr>
 
                           {isExpanded && (
                             <tr>
-                              <td style={{ ...tdStyle, background: "#fafafa" }} colSpan={8}>
+                              <td style={{ ...tdStyle, background: "#fafafa" }} colSpan={9}>
                                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                                   <thead>
                                     <tr>
@@ -506,6 +536,7 @@ export default function Accounts() {
                                       <th style={thStyleSmall}>IGST %</th>
                                       <th style={thStyleSmall}>IGST ₹</th>
                                       <th style={thStyleSmall}>Total</th>
+                                      <th style={thStyleSmall}>Profit</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -523,6 +554,7 @@ export default function Accounts() {
                                         <td style={tdStyleSmall}>{d.igstPercent}%</td>
                                         <td style={tdStyleSmall}>{formatCurrency(d.igstValue)}</td>
                                         <td style={tdStyleSmall}>{formatCurrency(d.inclusiveTotal)}</td>
+                                        <td style={{ ...tdStyleSmall, color: profitColor(d.profit) }}>{formatSigned(d.profit)}</td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -570,7 +602,7 @@ export default function Accounts() {
               <p style={{ color: "#777" }}>No returns found for this date range.</p>
             ) : (
               <>
-                {/* Summary strip: Taxable, Tax, Total — no discount, returns don't carry one */}
+                {/* Summary strip: Taxable, Tax, Total, Profit — no discount, returns don't carry one. */}
                 <div style={{ display: "flex", gap: "16px", marginBottom: "20px" }}>
                   <div style={summaryCardStyle}>
                     <div style={summaryLabelStyle}>Total Taxable</div>
@@ -586,6 +618,12 @@ export default function Accounts() {
                       {formatCurrency(returnTotals.total)}
                     </div>
                   </div>
+                  <div style={summaryCardStyle}>
+                    <div style={summaryLabelStyle}>Total Profit</div>
+                    <div style={{ ...summaryValueStyle, color: "#c62828" }}>
+                      {formatProfit(returnTotals.profit)}
+                    </div>
+                  </div>
                 </div>
 
                 <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "12px" }}>
@@ -599,6 +637,7 @@ export default function Accounts() {
                       <th style={thStyle}>Taxable</th>
                       <th style={thStyle}>Tax</th>
                       <th style={thStyle}>Total</th>
+                      <th style={thStyle}>Profit</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -622,11 +661,12 @@ export default function Accounts() {
                             <td style={tdStyle}>{formatCurrency(r.totalTaxable)}</td>
                             <td style={tdStyle}>{formatCurrency(r.totalTax)}</td>
                             <td style={tdStyle}>{formatCurrency(r.totalInclusive)}</td>
+                            <td style={{ ...tdStyle, color: "#c62828" }}>{formatProfit(r.totalProfit)}</td>
                           </tr>
 
                           {isExpanded && (
                             <tr>
-                              <td style={{ ...tdStyle, background: "#fafafa" }} colSpan={8}>
+                              <td style={{ ...tdStyle, background: "#fafafa" }} colSpan={9}>
                                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                                   <thead>
                                     <tr>
@@ -642,6 +682,7 @@ export default function Accounts() {
                                       <th style={thStyleSmall}>IGST %</th>
                                       <th style={thStyleSmall}>IGST ₹</th>
                                       <th style={thStyleSmall}>Total</th>
+                                      <th style={thStyleSmall}>Profit</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -659,6 +700,7 @@ export default function Accounts() {
                                         <td style={tdStyleSmall}>{d.igstPercent}%</td>
                                         <td style={tdStyleSmall}>{formatCurrency(d.igstValue)}</td>
                                         <td style={tdStyleSmall}>{formatCurrency(d.inclusiveTotal)}</td>
+                                        <td style={{ ...tdStyleSmall, color: "#c62828" }}>{formatProfit(d.profit)}</td>
                                       </tr>
                                     ))}
                                   </tbody>
