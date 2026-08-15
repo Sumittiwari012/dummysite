@@ -6,7 +6,8 @@ import { Routes, Route } from "react-router-dom";
 
 
 import Accounts from "./Components/accounts";
-import Attendance from './Components/Attendance';
+import Offers from "./Components/Offers/Offers";
+import CouponVoucher from './Components/Offers/CouponVoucher';
 
 function App() {
   
@@ -14,7 +15,8 @@ function App() {
     <Routes>
             <Route path="/" element={<Pdtsection />} />
             <Route path="/accounts" element={<Accounts />} />
-            <Route path="/attendance" element={<Attendance />} />
+            <Route path="/offers" element={<Offers />} />
+            <Route path="/offers/coupon" element={<CouponVoucher/>}/>
         </Routes>
   )
 }
