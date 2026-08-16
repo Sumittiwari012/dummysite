@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react'
-import { Ticket, LibraryBig } from 'lucide-react'
+import React, { useCallback, useEffect, useState } from 'react'
+import { Ticket, LibraryBig, AlertTriangle } from 'lucide-react'
 import TemplateLibrary, { VoucherCanvas, getSavedTemplates } from './TemplateLibrary'
 
 const DISCOUNT_TYPES = [
@@ -14,7 +14,7 @@ const EMPTY_FORM = {
   minSpend: '',
   issueLastDate: '',
   expiry: '',
-  template: '', // holds a saved template's id, e.g. 'vt_...'
+  template: '', // holds a saved template's id (now a numeric backend id, as a string)
 }
 
 // Rendered by CouponVoucher when "Add Coupon" is tapped — swapped in via
@@ -25,20 +25,41 @@ const EMPTY_FORM = {
 // back in. Still no separate URL — just a second imported component.
 //
 // Templates themselves are no longer a fixed list — they're whatever the
-// person has designed and saved in the library, each identified by an
-// id. This form just stores that id on the coupon.
+// person has designed and saved in the library (persisted via the
+// Template API), each identified by an id. This form just stores that
+// id on the coupon. Since `getSavedTemplates()` hits the backend, it's
+// async — loaded here through `refreshTemplates` rather than read
+// synchronously.
 function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
   const [form, setForm] = useState(EMPTY_FORM)
   const [view, setView] = useState('form') // 'form' | 'library'
-  const [savedTemplates, setSavedTemplates] = useState(() => getSavedTemplates())
+  const [savedTemplates, setSavedTemplates] = useState([])
+  const [templatesLoading, setTemplatesLoading] = useState(true)
+  const [templatesError, setTemplatesError] = useState(null)
 
-  // Refresh the list whenever we come back from the library, since the
-  // person may have added, edited, or deleted templates while in there.
+  const refreshTemplates = useCallback(async () => {
+    setTemplatesLoading(true)
+    setTemplatesError(null)
+    try {
+      const list = await getSavedTemplates()
+      setSavedTemplates(list)
+    } catch (e) {
+      // getSavedTemplates() already swallows its own errors and resolves
+      // to [], but keep this in case that ever changes.
+      setSavedTemplates([])
+      setTemplatesError('Could not load your saved templates.')
+    } finally {
+      setTemplatesLoading(false)
+    }
+  }, [])
+
+  // Load on mount, then refresh whenever we come back from the library,
+  // since the person may have added, edited, or deleted templates there.
   useEffect(() => {
     if (view === 'form') {
-      setSavedTemplates(getSavedTemplates())
+      refreshTemplates()
     }
-  }, [view])
+  }, [view, refreshTemplates])
 
   const handleChange = (field) => (e) => {
     setForm((prev) => ({ ...prev, [field]: e.target.value }))
@@ -51,8 +72,9 @@ function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
 
   const handleSelectTemplate = (templateId) => {
     setForm((prev) => ({ ...prev, template: templateId }))
-    setSavedTemplates(getSavedTemplates())
     setView('form')
+    // refreshTemplates() also runs via the effect above once `view`
+    // flips back to 'form', so the newly picked/saved template shows up.
   }
 
   if (view === 'library') {
@@ -165,7 +187,19 @@ function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
         <label className="ac-field">
           <span className="ac-label">Select coupon template</span>
 
-          {savedTemplates.length === 0 ? (
+          {templatesError && (
+            <p className="ac-templates-warning">
+              <AlertTriangle size={14} strokeWidth={2.25} />
+              {templatesError}
+              <button type="button" className="ac-inline-retry" onClick={refreshTemplates}>Retry</button>
+            </p>
+          )}
+
+          {templatesLoading ? (
+            <div className="ac-no-templates">
+              <p>Loading your saved templates…</p>
+            </div>
+          ) : savedTemplates.length === 0 ? (
             <div className="ac-no-templates">
               <p>No saved templates yet. Design one in the library, then pick it here.</p>
               <button type="button" onClick={() => setView('library')} className="ac-library-btn">
@@ -326,6 +360,32 @@ function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
           font-family: 'Inter', sans-serif;
           font-size: 12.5px;
           color: #6B6680;
+        }
+
+        .ac-templates-warning {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin: 0;
+          padding: 10px 12px;
+          border-radius: 8px;
+          background: #FDEEEE;
+          color: #8E2E2E;
+          font-family: 'Inter', sans-serif;
+          font-size: 12.5px;
+          font-weight: 600;
+        }
+
+        .ac-inline-retry {
+          margin-left: auto;
+          border: none;
+          background: transparent;
+          color: #8E2E2E;
+          font-weight: 700;
+          font-size: 12.5px;
+          text-decoration: underline;
+          cursor: pointer;
+          padding: 0;
         }
 
         .ac-template-row {
