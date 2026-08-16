@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import _ from 'lodash'
 import {
   ArrowLeft, Plus, Trash2, Copy, Check, Save, Palette,
-  Type, LayoutTemplate, Move, AlertTriangle
+  Type, LayoutTemplate, Move, AlertTriangle, X, Eye
 } from 'lucide-react'
 
 import { baseDesign, ELEMENT_POS_KEYS, round1 } from './lib/design'
@@ -50,6 +50,7 @@ export default function TemplateLibrary({ selectedTemplate = null, onBack = null
   const [pendingDeleteId, setPendingDeleteId] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
   const [copiedId, setCopiedId] = useState(null)
+  const [previewId, setPreviewId] = useState(null) // gallery-card id currently shown full-size, or null
 
   const svgRef = useRef(null)
   const dragRef = useRef(null)
@@ -288,9 +289,19 @@ export default function TemplateLibrary({ selectedTemplate = null, onBack = null
                 const isDeleting = deletingId === d.id
                 return (
                   <div key={d.id} className={`vs-card ${isSelected ? 'vs-card--selected' : ''}`}>
-                    <div className="vs-card-preview" style={{ aspectRatio: `${d.widthMM} / ${d.heightMM}` }}>
+                    <button
+                      type="button"
+                      className="vs-card-preview"
+                      style={{ aspectRatio: `${d.widthMM} / ${d.heightMM}` }}
+                      onClick={() => setPreviewId(d.id)}
+                      aria-label={`Preview ${d.name || 'Untitled voucher'}`}
+                    >
                       <VoucherCanvas design={d} />
-                    </div>
+                      <span className="vs-card-preview-hint">
+                        <Eye size={14} strokeWidth={2.25} />
+                        Preview
+                      </span>
+                    </button>
                     <div className="vs-card-body">
                       <div className="vs-card-heading">
                         <span className="vs-card-name">
@@ -339,6 +350,70 @@ export default function TemplateLibrary({ selectedTemplate = null, onBack = null
                 <button type="button" className="vs-btn vs-btn--ghost" onClick={() => setPendingDeleteId(null)} disabled={deletingId === pendingDeleteId}>Cancel</button>
                 <button type="button" className="vs-btn vs-btn--danger" onClick={() => confirmDelete(pendingDeleteId)} disabled={deletingId === pendingDeleteId}>
                   {deletingId === pendingDeleteId ? 'Deleting…' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {previewId && templates[previewId] && (
+          <div className="vs-preview-overlay" role="dialog" aria-modal="true" aria-label={`Preview of ${templates[previewId].name || 'Untitled voucher'}`}>
+            <div className="vs-preview-scrim" onClick={() => setPreviewId(null)} />
+            <div className="vs-preview-panel">
+              <button type="button" className="vs-preview-close" onClick={() => setPreviewId(null)} aria-label="Close preview">
+                <X size={18} strokeWidth={2.25} />
+              </button>
+
+              <div
+                className="vs-preview-canvas"
+                style={{ aspectRatio: `${templates[previewId].widthMM} / ${templates[previewId].heightMM}` }}
+              >
+                <VoucherCanvas design={templates[previewId]} />
+              </div>
+
+              <div className="vs-preview-info">
+                <h3 className="vs-preview-name">{templates[previewId].name || 'Untitled voucher'}</h3>
+                <p className="vs-preview-dim">
+                  {templates[previewId].widthMM}mm × {templates[previewId].heightMM}mm
+                  {' · '}
+                  {(templates[previewId].widthMM / 25.4).toFixed(2)}in × {(templates[previewId].heightMM / 25.4).toFixed(2)}in
+                </p>
+              </div>
+
+              <div className="vs-preview-actions">
+                {isPicker && (
+                  <button
+                    type="button"
+                    className="vs-btn vs-btn--primary"
+                    onClick={() => {
+                      onSelect(previewId)
+                      setPreviewId(null)
+                    }}
+                  >
+                    {previewId === selectedTemplate ? 'Selected' : 'Use this template'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="vs-btn vs-btn--ghost"
+                  onClick={() => {
+                    const id = previewId
+                    setPreviewId(null)
+                    openEdit(id)
+                  }}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  className="vs-btn vs-btn--ghost"
+                  onClick={() => {
+                    const id = previewId
+                    setPreviewId(null)
+                    duplicate(id)
+                  }}
+                >
+                  Duplicate
                 </button>
               </div>
             </div>

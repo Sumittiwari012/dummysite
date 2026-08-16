@@ -1,5 +1,21 @@
 import React from 'react'
 import { Field, NumberField, ColorField } from './FormFields'
+import { DISPLAY_FONTS, BODY_FONTS } from '../lib/design'
+
+// Each text-bearing element stores its own `font` — picking a font
+// here only ever changes this one element. The picker lives inline
+// with the element instead of a shared Canvas panel section.
+function FontField({ label, value, options, onChange }) {
+  return (
+    <Field label={label}>
+      <select className="vs-input" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((f) => (
+          <option key={f.value} value={f.value}>{f.label}</option>
+        ))}
+      </select>
+    </Field>
+  )
+}
 
 export function ElementFields({ elKey, draft, updateDraft }) {
   const el = draft[elKey]
@@ -33,10 +49,12 @@ export function ElementFields({ elKey, draft, updateDraft }) {
           <input className="vs-input" type="text" value={el.value} onChange={(e) => updateDraft('medallion.value', e.target.value)} />
         </Field>
         <NumberField label="Value font size" value={el.valueFontSize} min={2} onChange={(v) => updateDraft('medallion.valueFontSize', v)} />
+        <FontField label="Value font" value={el.valueFont} options={DISPLAY_FONTS} onChange={(v) => updateDraft('medallion.valueFont', v)} />
         <Field label="Label text">
           <input className="vs-input" type="text" value={el.label} onChange={(e) => updateDraft('medallion.label', e.target.value)} />
         </Field>
         <NumberField label="Label font size" value={el.labelFontSize} min={2} onChange={(v) => updateDraft('medallion.labelFontSize', v)} />
+        <FontField label="Label font" value={el.labelFont} options={BODY_FONTS} onChange={(v) => updateDraft('medallion.labelFont', v)} />
         <ColorField label="Fill" value={el.fill} fallback={draft.colors.tint} onChange={(v) => updateDraft('medallion.fill', v)} onClear={() => updateDraft('medallion.fill', null)} />
         <ColorField label="Stroke / text" value={el.stroke} fallback={fallbackColor} onChange={(v) => updateDraft('medallion.stroke', v)} onClear={() => updateDraft('medallion.stroke', null)} />
       </>
@@ -54,6 +72,7 @@ export function ElementFields({ elKey, draft, updateDraft }) {
           <NumberField label="Y" value={el.y} onChange={(v) => updateDraft('cornerFlag.y', v)} />
         </div>
         <NumberField label="Flag width" value={el.width} min={20} onChange={(v) => updateDraft('cornerFlag.width', v)} />
+        <FontField label="Font" value={el.font} options={BODY_FONTS} onChange={(v) => updateDraft('cornerFlag.font', v)} />
         <ColorField label="Text color" value={el.color} fallback={draft.colors.onDark} onChange={(v) => updateDraft('cornerFlag.color', v)} onClear={() => updateDraft('cornerFlag.color', null)} />
       </>
     )
@@ -73,12 +92,17 @@ export function ElementFields({ elKey, draft, updateDraft }) {
           <NumberField label="Y" value={el.y} onChange={(v) => updateDraft('qrLabel.y', v)} />
         </div>
         <NumberField label="Font size" value={el.fontSize} min={2} onChange={(v) => updateDraft('qrLabel.fontSize', v)} />
+        <FontField label="Font" value={el.font} options={BODY_FONTS} onChange={(v) => updateDraft('qrLabel.font', v)} />
         <ColorField label="Color" value={el.color} fallback={fallbackColor} onChange={(v) => updateDraft('qrLabel.color', v)} onClear={() => updateDraft('qrLabel.color', null)} />
       </>
     )
   }
 
-  // headline, subtitle, expiry, terms share the same shape
+  // headline, subtitle, expiry, terms share the same shape. Headline
+  // defaults to a display-style font and the rest to a body-style font,
+  // but each element's `font` is its own field — picking a font here
+  // only ever changes this one element, never any other text on the voucher.
+  const isDisplay = elKey === 'headline'
   return (
     <>
       <Field label="Text">
@@ -89,6 +113,12 @@ export function ElementFields({ elKey, draft, updateDraft }) {
         <NumberField label="Y" value={el.y} onChange={(v) => updateDraft(`${elKey}.y`, v)} />
       </div>
       <NumberField label="Font size" value={el.fontSize} min={2} onChange={(v) => updateDraft(`${elKey}.fontSize`, v)} />
+      <FontField
+        label="Font"
+        value={el.font}
+        options={isDisplay ? DISPLAY_FONTS : BODY_FONTS}
+        onChange={(v) => updateDraft(`${elKey}.font`, v)}
+      />
       <ColorField label="Color" value={el.color} fallback={fallbackColor} onChange={(v) => updateDraft(`${elKey}.color`, v)} onClear={() => updateDraft(`${elKey}.color`, null)} />
     </>
   )

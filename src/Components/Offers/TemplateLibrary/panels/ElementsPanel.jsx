@@ -2,40 +2,42 @@ import React from 'react'
 import { ELEMENT_LABELS } from '../lib/design'
 import { ElementFields } from './ElementFields'
 
+// Mirrors CanvasPanel's layout: a row of chips picks which element is
+// active, then a single section below shows that element's fields —
+// same pattern as CanvasPanel's SECTIONS chips + active-section body.
 export function ElementsPanel({ draft, updateDraft, selected, setSelected }) {
   const keys = Object.keys(ELEMENT_LABELS).concat(['medallion']).filter((v, i, a) => a.indexOf(v) === i)
+  const activeKey = selected && keys.includes(selected) ? selected : keys[0]
 
   return (
     <div className="vs-section-stack">
-      <section className="vs-section">
-        <h4 className="vs-section-title">Select an element</h4>
-        <div className="vs-element-list">
-          {keys.map((key) => (
-            <button
-              type="button"
-              key={key}
-              className={`vs-element-item ${selected === key ? 'vs-element-item--active' : ''}`}
-              onClick={() => setSelected(key)}
-            >
-              <span>{ELEMENT_LABELS[key]}</span>
-              <input
-                type="checkbox"
-                checked={draft[key].visible}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => updateDraft(`${key}.visible`, e.target.checked)}
-                aria-label={`Toggle ${ELEMENT_LABELS[key]} visibility`}
-              />
-            </button>
-          ))}
-        </div>
-      </section>
+      <div className="vs-preset-row">
+        {keys.map((key) => (
+          <button
+            type="button"
+            key={key}
+            className={`vs-chip ${activeKey === key ? 'vs-chip--active' : ''}`}
+            onClick={() => setSelected(key)}
+          >
+            {ELEMENT_LABELS[key]}
+          </button>
+        ))}
+      </div>
 
-      {selected && (
-        <section className="vs-section">
-          <h4 className="vs-section-title">{ELEMENT_LABELS[selected]}</h4>
-          <ElementFields elKey={selected} draft={draft} updateDraft={updateDraft} />
-        </section>
-      )}
+      <section className="vs-section">
+        <div className="vs-section-header-row">
+          <h4 className="vs-section-title">{ELEMENT_LABELS[activeKey]}</h4>
+          <label className="vs-toggle-row vs-toggle-row--inline">
+            <input
+              type="checkbox"
+              checked={draft[activeKey].visible}
+              onChange={(e) => updateDraft(`${activeKey}.visible`, e.target.checked)}
+            />
+            <span>Visible</span>
+          </label>
+        </div>
+        <ElementFields elKey={activeKey} draft={draft} updateDraft={updateDraft} />
+      </section>
     </div>
   )
 }

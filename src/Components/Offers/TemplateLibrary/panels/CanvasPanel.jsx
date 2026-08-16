@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { SIZE_PRESETS, DISPLAY_FONTS, BODY_FONTS } from '../lib/design'
+import { SIZE_PRESETS } from '../lib/design'
 import { Field, NumberField, ColorField } from './FormFields'
 import { PatternPickerField } from './PatternPickerField'
 import { RibbonPickerField } from './RibbonPickerField'
@@ -7,7 +7,6 @@ import { RibbonPickerField } from './RibbonPickerField'
 const SECTIONS = [
   { key: 'size', label: 'Print size' },
   { key: 'colors', label: 'Colors' },
-  { key: 'fonts', label: 'Fonts' },
   { key: 'background', label: 'Background' },
   { key: 'sidePanel', label: 'Side panel' },
   { key: 'ribbon', label: 'Ribbon' },
@@ -64,22 +63,6 @@ export function CanvasPanel({ draft, updateDraft }) {
           <ColorField label="Accent (dark)" value={draft.colors.accentDark} fallback="#8F5720" onChange={(v) => updateDraft('colors.accentDark', v)} onClear={() => updateDraft('colors.accentDark', '#8F5720')} />
           <ColorField label="Background tint" value={draft.colors.tint} fallback="#FBF3E8" onChange={(v) => updateDraft('colors.tint', v)} onClear={() => updateDraft('colors.tint', '#FBF3E8')} />
           <ColorField label="Text on dark panel" value={draft.colors.onDark} fallback="#FFFFFF" onChange={(v) => updateDraft('colors.onDark', v)} onClear={() => updateDraft('colors.onDark', '#FFFFFF')} />
-        </section>
-      )}
-
-      {activeSection === 'fonts' && (
-        <section className="vs-section">
-          <h4 className="vs-section-title">Fonts</h4>
-          <Field label="Display font (headline, medallion value)">
-            <select className="vs-input" value={draft.fontDisplay} onChange={(e) => updateDraft('fontDisplay', e.target.value)}>
-              {DISPLAY_FONTS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-            </select>
-          </Field>
-          <Field label="Body font (labels, fine print)">
-            <select className="vs-input" value={draft.fontBody} onChange={(e) => updateDraft('fontBody', e.target.value)}>
-              {BODY_FONTS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-            </select>
-          </Field>
         </section>
       )}
 

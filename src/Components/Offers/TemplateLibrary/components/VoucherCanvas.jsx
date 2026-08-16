@@ -44,7 +44,7 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
       width="100%"
       height="100%"
       onPointerDown={() => interactive && onSelect && onSelect(null)}
-      style={{ display: 'block', fontFamily: design.fontBody, touchAction: 'none' }}
+      style={{ display: 'block', fontFamily: "'Inter', sans-serif", touchAction: 'none' }}
     >
       <defs>
         <linearGradient id={`vgrad-${uid}`} x1="0" y1="0" x2="1" y2="1">
@@ -134,7 +134,7 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
             <text
               x={design.cornerFlag.x} y={design.cornerFlag.y}
               textAnchor="middle" fontSize={5.5} fontWeight="700" letterSpacing="0.3"
-              fill={col(design.cornerFlag, c.onDark)} fontFamily={design.fontBody}
+              fill={col(design.cornerFlag, c.onDark)} fontFamily={design.cornerFlag.font}
             >
               {design.cornerFlag.text}
             </text>
@@ -147,7 +147,7 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
             <text
               x={design.headline.x} y={design.headline.y}
               fontSize={design.headline.fontSize} fontWeight="800"
-              fill={col(design.headline, c.accentDark)} fontFamily={design.fontDisplay}
+              fill={col(design.headline, c.accentDark)} fontFamily={design.headline.font}
             >
               {design.headline.text}
             </text>
@@ -160,7 +160,7 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
             <text
               x={design.subtitle.x} y={design.subtitle.y}
               fontSize={design.subtitle.fontSize} fontWeight="600" letterSpacing="0.15em"
-              fill={col(design.subtitle, c.accentDark)} opacity="0.75" fontFamily={design.fontBody}
+              fill={col(design.subtitle, c.accentDark)} opacity="0.75" fontFamily={design.subtitle.font}
             >
               {design.subtitle.text}
             </text>
@@ -173,7 +173,7 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
             <text
               x={design.expiry.x} y={design.expiry.y}
               fontSize={design.expiry.fontSize} fontWeight="700" letterSpacing="0.04em"
-              fill={col(design.expiry, c.accentDark)} opacity="0.85" fontFamily={design.fontBody}
+              fill={col(design.expiry, c.accentDark)} opacity="0.85" fontFamily={design.expiry.font}
             >
               {design.expiry.text}
             </text>
@@ -193,14 +193,14 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
             <text
               x={design.qrLabel.x} y={design.qrLabel.y}
               fontSize={design.qrLabel.fontSize} fontWeight="700" letterSpacing="0.06em"
-              fill={col(design.qrLabel, c.accentDark)} opacity="0.8" fontFamily={design.fontBody}
+              fill={col(design.qrLabel, c.accentDark)} opacity="0.8" fontFamily={design.qrLabel.font}
             >
               {design.qrLabel.line1}
             </text>
             <text
               x={design.qrLabel.x} y={design.qrLabel.y + design.qrLabel.fontSize * 1.15}
               fontSize={design.qrLabel.fontSize} fontWeight="700" letterSpacing="0.06em"
-              fill={col(design.qrLabel, c.accentDark)} opacity="0.8" fontFamily={design.fontBody}
+              fill={col(design.qrLabel, c.accentDark)} opacity="0.8" fontFamily={design.qrLabel.font}
             >
               {design.qrLabel.line2}
             </text>
@@ -212,7 +212,7 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
           <g onPointerDown={handlePointerDown('terms')} style={{ cursor: interactive ? 'grab' : 'default' }}>
             <text
               x={design.terms.x} y={design.terms.y}
-              fontSize={design.terms.fontSize} fill={col(design.terms, c.accentDark)} opacity="0.6" fontFamily={design.fontBody}
+              fontSize={design.terms.fontSize} fill={col(design.terms, c.accentDark)} opacity="0.6" fontFamily={design.terms.font}
             >
               {design.terms.text}
             </text>
@@ -227,14 +227,14 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
             <text
               x={design.medallion.cx} y={design.medallion.cy - design.medallion.r * 0.05}
               textAnchor="middle" fontSize={design.medallion.valueFontSize} fontWeight="800"
-              fill={design.medallion.stroke || c.accentDark} fontFamily={design.fontDisplay}
+              fill={design.medallion.stroke || c.accentDark} fontFamily={design.medallion.valueFont}
             >
               {design.medallion.value}
             </text>
             <text
               x={design.medallion.cx} y={design.medallion.cy + design.medallion.r * 0.36}
               textAnchor="middle" fontSize={design.medallion.labelFontSize} fontWeight="700" letterSpacing="0.1em"
-              fill={design.medallion.stroke || c.accentDark} opacity="0.8" fontFamily={design.fontBody}
+              fill={design.medallion.stroke || c.accentDark} opacity="0.8" fontFamily={design.medallion.labelFont}
             >
               {design.medallion.label}
             </text>

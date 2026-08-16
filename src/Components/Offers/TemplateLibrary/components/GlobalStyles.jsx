@@ -3,7 +3,7 @@ import React from 'react'
 export function GlobalStyles() {
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;800&family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Playfair+Display:wght@700;800&family=IBM+Plex+Mono:wght@600;700&family=Manrope:wght@500;700&family=IBM+Plex+Sans:wght@400;600;700&family=Source+Serif+4:wght@600;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;800&family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Playfair+Display:wght@700;800&family=IBM+Plex+Mono:wght@600;700&family=Manrope:wght@500;700&family=IBM+Plex+Sans:wght@400;600;700&family=Source+Serif+4:wght@600;700&family=Bebas+Neue&family=Anton&family=Archivo+Black&family=Poppins:wght@700;800&family=Montserrat:wght@700;800&family=Oswald:wght@600;700&family=Abril+Fatface&family=DM+Serif+Display&family=Cormorant+Garamond:wght@600;700&family=Libre+Baskerville:wght@700&family=Syne:wght@700;800&family=Sora:wght@700;800&family=Unbounded:wght@700;800&family=Outfit:wght@700;800&family=Righteous&family=Rubik+Mono+One&family=Big+Shoulders+Display:wght@700;800&family=Josefin+Sans:wght@600;700&family=Bodoni+Moda:wght@700;800&family=Zilla+Slab:wght@600;700&family=Roboto:wght@400;500;600;700&family=Open+Sans:wght@400;500;600;700&family=Lato:wght@400;700&family=Nunito:wght@400;500;600;700&family=Work+Sans:wght@400;500;600;700&family=Karla:wght@400;500;600;700&family=Mulish:wght@400;500;600;700&family=Rubik:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Barlow:wght@400;500;600;700&family=Inconsolata:wght@400;500;600;700&family=Quicksand:wght@400;500;600;700&family=Raleway:wght@400;500;600;700&family=PT+Sans:wght@400;700&family=Noto+Sans:wght@400;500;600;700&family=Hind:wght@400;500;600;700&family=Overpass:wght@400;500;600;700&family=Cabin:wght@400;500;600;700&family=Assistant:wght@400;500;600;700&family=Public+Sans:wght@400;500;600;700&display=swap');
 
       .vs-wrap { background: #FFFFFF; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 20px -12px rgba(28,26,36,0.35); font-family: 'Inter', sans-serif; }
 
@@ -49,7 +49,11 @@ export function GlobalStyles() {
 
       .vs-card { border: 1.5px solid #E3E1EA; border-radius: 12px; overflow: hidden; background: #FFFFFF; display: flex; flex-direction: column; }
       .vs-card--selected { border-color: #B9762E; background: #FBF3E8; }
-      .vs-card-preview { width: 100%; overflow: hidden; }
+      .vs-card-preview { position: relative; width: 100%; overflow: hidden; border: none; padding: 0; margin: 0; background: none; cursor: pointer; display: block; -webkit-tap-highlight-color: transparent; }
+      .vs-card-preview:focus-visible { outline: 3px solid #1C1A24; outline-offset: -3px; }
+      .vs-card-preview-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 6px; background: rgba(28,26,36,0.45); color: #FFFFFF; font-weight: 700; font-size: 12.5px; opacity: 0; transition: opacity 0.15s ease; pointer-events: none; }
+      .vs-card-preview:hover .vs-card-preview-hint,
+      .vs-card-preview:focus-visible .vs-card-preview-hint { opacity: 1; }
       .vs-card-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; }
       .vs-card-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
       .vs-card-name { display: flex; align-items: center; gap: 5px; font-weight: 700; font-size: 13.5px; color: #1C1A24; }
@@ -78,6 +82,17 @@ export function GlobalStyles() {
       .vs-preview-overlay { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; padding: 20px; }
       .vs-preview-scrim { position: absolute; inset: 0; background: rgba(28,26,36,0.55); }
       .vs-confirm-panel { position: relative; background: #FFFFFF; border-radius: 14px; padding: 20px; max-width: 340px; width: 100%; box-shadow: 0 20px 40px -20px rgba(28,26,36,0.5); }
+
+      .vs-preview-panel { position: relative; background: #FFFFFF; border-radius: 16px; padding: 24px; max-width: 560px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 24px 48px -20px rgba(28,26,36,0.55); display: flex; flex-direction: column; gap: 16px; }
+      .vs-preview-close { position: absolute; top: 14px; right: 14px; width: 32px; height: 32px; border-radius: 9px; border: none; background: #F7F6FA; color: #1C1A24; display: flex; align-items: center; justify-content: center; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+      .vs-preview-close:hover { background: #EDEBF2; }
+      .vs-preview-close:focus-visible { outline: 3px solid #1C1A24; outline-offset: 2px; }
+      .vs-preview-canvas { width: 100%; border-radius: 12px; overflow: hidden; box-shadow: 0 12px 28px -16px rgba(28,26,36,0.4); background: #fff; }
+      .vs-preview-info { display: flex; flex-direction: column; gap: 2px; }
+      .vs-preview-name { margin: 0; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 17px; color: #1C1A24; }
+      .vs-preview-dim { margin: 0; font-size: 12.5px; color: #9C98AC; }
+      .vs-preview-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+      .vs-preview-actions .vs-btn { flex: 1; min-width: 120px; }
       .vs-confirm-title { margin: 0 0 6px; font-family: 'Space Grotesk', sans-serif; font-size: 16px; color: #1C1A24; }
       .vs-confirm-text { margin: 0 0 16px; font-size: 13px; color: #6B6680; line-height: 1.5; }
       .vs-confirm-actions { display: flex; gap: 8px; }
@@ -111,6 +126,10 @@ export function GlobalStyles() {
       .vs-panel-body { padding: 16px; }
       .vs-section-stack { display: flex; flex-direction: column; gap: 20px; }
       .vs-section-title { margin: 0 0 10px; font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #9C98AC; }
+
+      .vs-section-header-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+      .vs-section-header-row .vs-section-title { margin: 0; }
+      .vs-toggle-row--inline { padding: 0; flex-shrink: 0; }
 
       .vs-preset-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
       .vs-chip { border: 1.5px solid #E3E1EA; background: #FFFFFF; border-radius: 999px; padding: 6px 11px; font-weight: 600; font-size: 12px; color: #6B6680; cursor: pointer; }
@@ -147,7 +166,7 @@ export function GlobalStyles() {
       .vs-element-item input { width: 15px; height: 15px; accent-color: #1C1A24; }
 
       @media (prefers-reduced-motion: reduce) {
-        .vs-btn, .vs-chip, .vs-card-id { transition: none; }
+        .vs-btn, .vs-chip, .vs-card-id, .vs-card-preview-hint { transition: none; }
       }
     `}</style>
   )
