@@ -31,8 +31,8 @@ export function GlobalStyles() {
       .vs-gallery-header-left { display: flex; align-items: flex-start; gap: 12px; }
       .vs-gallery-header .vs-eyebrow { color: #9C98AC; }
       .vs-eyebrow--dark { color: #B9762E; }
-      .vs-back--light { background: #F7F6FA; color: #1C1A24; margin-top: 2px; }
-      .vs-back--light:hover { background: #EDEBF2; }
+      .vs-back.vs-back--light { background: #F7F6FA; color: #1C1A24; margin-top: 2px; }
+      .vs-back.vs-back--light:hover { background: #EDEBF2; }
 
       .vs-storage-warning { display: flex; align-items: center; gap: 6px; margin: 0 0 16px; padding: 10px 12px; border-radius: 8px; background: #FDEEEE; color: #8E2E2E; font-size: 12.5px; font-weight: 600; }
       .vs-storage-warning--editor { margin: 0; border-radius: 0; }
@@ -84,9 +84,11 @@ export function GlobalStyles() {
       .vs-confirm-panel { position: relative; background: #FFFFFF; border-radius: 14px; padding: 20px; max-width: 340px; width: 100%; box-shadow: 0 20px 40px -20px rgba(28,26,36,0.5); }
 
       .vs-preview-panel { position: relative; background: #FFFFFF; border-radius: 16px; padding: 24px; max-width: 560px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 24px 48px -20px rgba(28,26,36,0.55); display: flex; flex-direction: column; gap: 16px; }
-      .vs-preview-close { position: absolute; top: 14px; right: 14px; width: 32px; height: 32px; border-radius: 9px; border: none; background: #F7F6FA; color: #1C1A24; display: flex; align-items: center; justify-content: center; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+      .vs-preview-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .vs-preview-close { flex-shrink: 0; width: 32px; height: 32px; border-radius: 9px; border: none; background: #F7F6FA; color: #1C1A24; display: flex; align-items: center; justify-content: center; cursor: pointer; -webkit-tap-highlight-color: transparent; }
       .vs-preview-close:hover { background: #EDEBF2; }
       .vs-preview-close:focus-visible { outline: 3px solid #1C1A24; outline-offset: 2px; }
+      .vs-preview-back { padding: 8px 14px 8px 11px; font-size: 12.5px; }
       .vs-preview-canvas { width: 100%; border-radius: 12px; overflow: hidden; box-shadow: 0 12px 28px -16px rgba(28,26,36,0.4); background: #fff; }
       .vs-preview-info { display: flex; flex-direction: column; gap: 2px; }
       .vs-preview-name { margin: 0; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 17px; color: #1C1A24; }

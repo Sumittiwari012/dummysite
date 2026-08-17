@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import _ from 'lodash'
 import {
   ArrowLeft, Plus, Trash2, Copy, Check, Save, Palette,
@@ -31,6 +32,12 @@ import { ElementsPanel } from './panels/ElementsPanel'
 // management screen instead.
 export default function TemplateLibrary({ selectedTemplate = null, onBack = null, onSelect = null }) {
   const isPicker = typeof onSelect === 'function'
+  const navigate = useNavigate()
+  // Whoever mounts this may or may not wire up `onBack` (e.g. a route
+  // like /offers/coupon rendering this directly, with no picker plumbing).
+  // Either way there should always be a way back, so fall back to plain
+  // browser history when no explicit onBack was given.
+  const goBack = onBack || (() => navigate(-1))
   const [view, setView] = useState('gallery')
 
   // templates: id -> design (design.id is always a string). order: ids
@@ -237,11 +244,9 @@ export default function TemplateLibrary({ selectedTemplate = null, onBack = null
         <div className="vs-gallery-inner">
           <div className="vs-gallery-header">
             <div className="vs-gallery-header-left">
-              {onBack && (
-                <button type="button" onClick={onBack} className="vs-back vs-back--light" aria-label="Back to Add Coupon">
-                  <ArrowLeft size={18} strokeWidth={2.25} />
-                </button>
-              )}
+              <button type="button" onClick={goBack} className="vs-back vs-back--light" aria-label="Back">
+                <ArrowLeft size={18} strokeWidth={2.25} />
+              </button>
               <div>
                 <p className="vs-eyebrow vs-eyebrow--dark">{isPicker ? 'Choose a template' : 'Coupon design studio'}</p>
                 <h2 className="vs-title">Your saved templates</h2>
@@ -360,9 +365,22 @@ export default function TemplateLibrary({ selectedTemplate = null, onBack = null
           <div className="vs-preview-overlay" role="dialog" aria-modal="true" aria-label={`Preview of ${templates[previewId].name || 'Untitled voucher'}`}>
             <div className="vs-preview-scrim" onClick={() => setPreviewId(null)} />
             <div className="vs-preview-panel">
-              <button type="button" className="vs-preview-close" onClick={() => setPreviewId(null)} aria-label="Close preview">
-                <X size={18} strokeWidth={2.25} />
-              </button>
+              <div className="vs-preview-header">
+                <button
+                  type="button"
+                  className="vs-btn vs-btn--ghost vs-preview-back"
+                  onClick={() => {
+                    setPreviewId(null)
+                    goBack()
+                  }}
+                >
+                  <ArrowLeft size={15} strokeWidth={2.5} />
+                  {onBack ? 'Add Coupon' : 'Back'}
+                </button>
+                <button type="button" className="vs-preview-close" onClick={() => setPreviewId(null)} aria-label="Close preview">
+                  <X size={18} strokeWidth={2.25} />
+                </button>
+              </div>
 
               <div
                 className="vs-preview-canvas"
@@ -445,12 +463,10 @@ export default function TemplateLibrary({ selectedTemplate = null, onBack = null
               aria-label="Template name"
             />
           </div>
-          {onBack && (
-            <button type="button" className="vs-btn vs-btn--ghost vs-btn--onDark" onClick={onBack}>
-              <ArrowLeft size={14} strokeWidth={2.25} />
-              Add Coupon
-            </button>
-          )}
+          <button type="button" className="vs-btn vs-btn--ghost vs-btn--onDark" onClick={goBack}>
+            <ArrowLeft size={14} strokeWidth={2.25} />
+            {onBack ? 'Add Coupon' : 'Back'}
+          </button>
           {isPicker ? (
             <button type="button" className="vs-btn vs-btn--primary" onClick={() => saveDraft(true)} disabled={saveState === 'saving'}>
               {saveState === 'saved' ? <Check size={16} strokeWidth={2.5} /> : <Save size={16} strokeWidth={2.25} />}
