@@ -9,6 +9,7 @@ import {
   UserPlus,
 } from 'lucide-react'
 import AddCoupon from './AddCoupon'
+import GetCoupon from './GetCoupon/GetCoupon'
 
 // Wire each handler up to your real coupon actions (modal, API call, route, etc).
 const ACTIONS = [
@@ -28,22 +29,7 @@ const ACTIONS = [
     base: '#2F7E72',
     deep: '#215C54',
   },
-  {
-    key: 'update',
-    label: 'Update Coupon',
-    sub: 'Edit an existing coupon',
-    icon: Pencil,
-    base: '#5B4A8A',
-    deep: '#413267',
-  },
-  {
-    key: 'delete',
-    label: 'Delete Coupon',
-    sub: 'Remove a coupon',
-    icon: Trash2,
-    base: '#C0503C',
-    deep: '#8F392B',
-  },
+  
   {
     key: 'assign',
     label: 'Assign Coupon',
@@ -54,9 +40,21 @@ const ACTIONS = [
   },
 ]
 
+const VIEW_TITLES = {
+  menu: 'Manage coupons',
+  add: 'Add a new coupon',
+  get: 'Available coupons',
+}
+
+const VIEW_BACK_LABELS = {
+  menu: 'Offers',
+  add: 'Coupon Voucher',
+  get: 'Coupon Voucher',
+}
+
 function CouponVoucher() {
   const navigate = useNavigate()
-  const [view, setView] = useState('menu') // 'menu' | 'add' — no route change involved
+  const [view, setView] = useState('menu') // 'menu' | 'add' | 'get' — no route change involved
 
   useEffect(() => {
     const id = 'offers-font-link'
@@ -71,15 +69,15 @@ function CouponVoucher() {
   }, [])
 
   const handleAction = (key) => {
-    if (key === 'add') {
-      setView('add')
+    if (key === 'add' || key === 'get') {
+      setView(key)
       return
     }
     console.log(`${key} tapped`)
   }
 
   const handleBack = () => {
-    if (view === 'add') {
+    if (view !== 'menu') {
       setView('menu')
       return
     }
@@ -104,7 +102,7 @@ function CouponVoucher() {
       <div style={{ maxWidth: 640, margin: '0 auto' }}>
         <button type="button" onClick={handleBack} className="cv-back">
           <ArrowLeft size={18} strokeWidth={2.25} />
-          {view === 'add' ? 'Coupon Voucher' : 'Offers'}
+          {VIEW_BACK_LABELS[view]}
         </button>
 
         <p
@@ -129,12 +127,16 @@ function CouponVoucher() {
             margin: '0 0 20px',
           }}
         >
-          {view === 'add' ? 'Add a new coupon' : 'Manage coupons'}
+          {VIEW_TITLES[view]}
         </h1>
 
-        {view === 'add' ? (
+        {view === 'add' && (
           <AddCoupon onCancel={() => setView('menu')} onSubmit={handleCreateCoupon} />
-        ) : (
+        )}
+
+        {view === 'get' && <GetCoupon onCancel={() => setView('menu')} />}
+
+        {view === 'menu' && (
           <div className="cv-action-grid">
             {ACTIONS.map(({ key, label, sub, icon: Icon, base, deep }) => (
               <button

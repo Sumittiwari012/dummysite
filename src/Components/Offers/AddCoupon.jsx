@@ -2,19 +2,66 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { Ticket, LibraryBig, AlertTriangle } from 'lucide-react'
 import TemplateLibrary, { VoucherCanvas, getSavedTemplates } from './TemplateLibrary'
 
-const DISCOUNT_TYPES = [
-  { value: 'percentage', label: 'Percentage' },
-  { value: 'flat', label: 'Flat discount' },
-]
+// Discount types and coupon types are now loaded from the backend
+// (GET api/Coupon/DiscountType, GET api/Coupon/CouponType) rather than
+// hardcoded, so option ids/labels always match whatever's seeded in
+// MDiscountType / MCouponType.
+const DISCOUNT_TYPE_ENDPOINT = 'https://dummypossetup.runasp.net/api/Coupon/DiscountType'
+const COUPON_TYPE_ENDPOINT = 'https://dummypossetup.runasp.net/api/Coupon/CouponType'
+// POST api/Coupon/AddCoupon — creates the coupon on the backend
+// (CouponController.AddCoupon). Expects the AddCouponDTO shape:
+// Name, DiscountTypeId, DIscountPercentage, DiscountAmount,
+// MinSpendAmount, IssuingLastdate, ExpiryDate, CouponType, TemplateId.
+const ADD_COUPON_ENDPOINT = 'https://dummypossetup.runasp.net/api/Coupon/AddCoupon'
+
+async function fetchDiscountTypes() {
+  const res = await fetch(DISCOUNT_TYPE_ENDPOINT)
+  if (!res.ok) throw new Error(`Failed to load discount types (${res.status})`)
+  const data = await res.json()
+  // Normalize casing since System.Text.Json may serialize as camelCase
+  // (id/name) or, depending on config, PascalCase (Id/Name).
+  return data.map((t) => ({ id: t.id ?? t.Id, name: t.name ?? t.Name }))
+}
+
+async function fetchCouponTypes() {
+  const res = await fetch(COUPON_TYPE_ENDPOINT)
+  if (!res.ok) throw new Error(`Failed to load coupon types (${res.status})`)
+  const data = await res.json()
+  return data.map((t) => ({
+    id: t.id ?? t.Id,
+    name: t.couponTypeName ?? t.CouponTypeName,
+  }))
+}
+
+// Posts the coupon payload to the backend. Throws with a readable message
+// on non-2xx so callers can surface it in the form's error banner — the
+// backend returns 400 with a plain-text body for FK validation failures
+// (bad DiscountTypeId / CouponType / TemplateId), so that text is
+// preferred over a generic status-code message when present.
+async function addCoupon(payload) {
+  const res = await fetch(ADD_COUPON_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text || `Failed to create coupon (${res.status})`)
+  }
+
+  return res.json()
+}
 
 const EMPTY_FORM = {
   name: '',
-  discountType: 'percentage',
+  discountTypeId: '',
   discountValue: '',
-  minSpend: '',
-  issueLastDate: '',
-  expiry: '',
-  template: '', // holds a saved template's id (now a numeric backend id, as a string)
+  minSpendAmount: '',
+  issuingLastDate: '',
+  expiryDate: '',
+  couponType: '',
+  templateId: '', // holds a saved template's id (numeric backend id, as a string)
 }
 
 // Rendered by CouponVoucher when "Add Coupon" is tapped — swapped in via
@@ -30,12 +77,33 @@ const EMPTY_FORM = {
 // id on the coupon. Since `getSavedTemplates()` hits the backend, it's
 // async — loaded here through `refreshTemplates` rather than read
 // synchronously.
+//
+// Field names on submit are shaped to match the MCoupon backend model
+// (Name, DiscountTypeId, DIscountPercentage, DiscountAmount,
+// MinSpendAmount, IssuingLastdate, ExpiryDate, CouponType, TemplateId)
+// rather than the local camelCase form state, and are POSTed to
+// api/Coupon/AddCoupon via `addCoupon()` before `onSubmit` fires — so the
+// parent only hears about a coupon that actually made it into the DB.
 function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
   const [form, setForm] = useState(EMPTY_FORM)
   const [view, setView] = useState('form') // 'form' | 'library'
   const [savedTemplates, setSavedTemplates] = useState([])
   const [templatesLoading, setTemplatesLoading] = useState(true)
   const [templatesError, setTemplatesError] = useState(null)
+
+  const [discountTypes, setDiscountTypes] = useState([])
+  const [discountTypesLoading, setDiscountTypesLoading] = useState(true)
+  const [discountTypesError, setDiscountTypesError] = useState(null)
+
+  const [couponTypes, setCouponTypes] = useState([])
+  const [couponTypesLoading, setCouponTypesLoading] = useState(true)
+  const [couponTypesError, setCouponTypesError] = useState(null)
+
+  // Submission state for the POST to AddCoupon — separate from the
+  // load-time loading/error states above, since this only applies once
+  // the person hits "Create Coupon".
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState(null)
 
   const refreshTemplates = useCallback(async () => {
     setTemplatesLoading(true)
@@ -53,25 +121,102 @@ function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
     }
   }, [])
 
-  // Load on mount, then refresh whenever we come back from the library,
-  // since the person may have added, edited, or deleted templates there.
+  const refreshDiscountTypes = useCallback(async () => {
+    setDiscountTypesLoading(true)
+    setDiscountTypesError(null)
+    try {
+      const list = await fetchDiscountTypes()
+      setDiscountTypes(list)
+      // Default the form to the first discount type once loaded, but
+      // only if nothing's been picked yet (don't clobber a real choice).
+      setForm((prev) =>
+        prev.discountTypeId === '' && list.length > 0
+          ? { ...prev, discountTypeId: list[0].id }
+          : prev
+      )
+    } catch (e) {
+      setDiscountTypes([])
+      setDiscountTypesError('Could not load discount types.')
+    } finally {
+      setDiscountTypesLoading(false)
+    }
+  }, [])
+
+  const refreshCouponTypes = useCallback(async () => {
+    setCouponTypesLoading(true)
+    setCouponTypesError(null)
+    try {
+      const list = await fetchCouponTypes()
+      setCouponTypes(list)
+      setForm((prev) =>
+        prev.couponType === '' && list.length > 0
+          ? { ...prev, couponType: list[0].id }
+          : prev
+      )
+    } catch (e) {
+      setCouponTypes([])
+      setCouponTypesError('Could not load coupon types.')
+    } finally {
+      setCouponTypesLoading(false)
+    }
+  }, [])
+
+  // Load on mount, then refresh templates whenever we come back from the
+  // library, since the person may have added, edited, or deleted
+  // templates there. Discount/coupon types don't change from the
+  // library view, so those only need to load once.
   useEffect(() => {
     if (view === 'form') {
       refreshTemplates()
     }
   }, [view, refreshTemplates])
 
+  useEffect(() => {
+    refreshDiscountTypes()
+    refreshCouponTypes()
+  }, [refreshDiscountTypes, refreshCouponTypes])
+
   const handleChange = (field) => (e) => {
     setForm((prev) => ({ ...prev, [field]: e.target.value }))
   }
 
-  const handleSubmit = (e) => {
+  const handleNumericSelectChange = (field) => (e) => {
+    setForm((prev) => ({ ...prev, [field]: Number(e.target.value) }))
+  }
+
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    onSubmit(form)
+
+    const numericDiscountValue = Number(form.discountValue) || 0
+    const selectedDiscountType = discountTypes.find((t) => t.id === form.discountTypeId)
+    const isPercentage = (selectedDiscountType?.name || '').toLowerCase().includes('percent')
+
+    const payload = {
+      Name: form.name,
+      DiscountTypeId: form.discountTypeId,
+      DIscountPercentage: isPercentage ? numericDiscountValue : 0,
+      DiscountAmount: isPercentage ? 0 : numericDiscountValue,
+      MinSpendAmount: Number(form.minSpendAmount) || 0,
+      IssuingLastdate: form.issuingLastDate,
+      ExpiryDate: form.expiryDate,
+      CouponType: form.couponType,
+      TemplateId: form.templateId ? Number(form.templateId) : null,
+    }
+
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      const created = await addCoupon(payload)
+      onSubmit(created)
+    } catch (err) {
+      setSubmitError(err.message || 'Could not create the coupon. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleSelectTemplate = (templateId) => {
-    setForm((prev) => ({ ...prev, template: templateId }))
+    setForm((prev) => ({ ...prev, templateId }))
     setView('form')
     // refreshTemplates() also runs via the effect above once `view`
     // flips back to 'form', so the newly picked/saved template shows up.
@@ -80,14 +225,18 @@ function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
   if (view === 'library') {
     return (
       <TemplateLibrary
-        selectedTemplate={form.template}
+        selectedTemplate={form.templateId}
         onBack={() => setView('form')}
         onSelect={handleSelectTemplate}
       />
     )
   }
 
-  const activeTemplate = savedTemplates.find((t) => t.id === form.template)
+  const activeTemplate = savedTemplates.find((t) => String(t.id) === String(form.templateId))
+  const selectedDiscountTypeForLabel = discountTypes.find((t) => t.id === form.discountTypeId)
+  const discountValueLabel = (selectedDiscountTypeForLabel?.name || '').toLowerCase().includes('percent')
+    ? 'Value (%)'
+    : 'Value ($)'
 
   return (
     <div className="ac-wrap">
@@ -102,6 +251,13 @@ function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
       </div>
 
       <form className="ac-form" onSubmit={handleSubmit}>
+        {submitError && (
+          <p className="ac-templates-warning">
+            <AlertTriangle size={14} strokeWidth={2.25} />
+            {submitError}
+          </p>
+        )}
+
         <label className="ac-field">
           <span className="ac-label">Coupon name</span>
           <input
@@ -114,26 +270,67 @@ function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
           />
         </label>
 
+        <label className="ac-field">
+          <span className="ac-label">Coupon type</span>
+          {couponTypesError && (
+            <p className="ac-templates-warning">
+              <AlertTriangle size={14} strokeWidth={2.25} />
+              {couponTypesError}
+              <button type="button" className="ac-inline-retry" onClick={refreshCouponTypes}>Retry</button>
+            </p>
+          )}
+          <select
+            value={form.couponType}
+            onChange={handleNumericSelectChange('couponType')}
+            className="ac-input"
+            disabled={couponTypesLoading || couponTypes.length === 0}
+          >
+            {couponTypesLoading ? (
+              <option value="">Loading…</option>
+            ) : couponTypes.length === 0 ? (
+              <option value="">No coupon types available</option>
+            ) : (
+              couponTypes.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.name}
+                </option>
+              ))
+            )}
+          </select>
+        </label>
+
         <div className="ac-row">
           <label className="ac-field">
             <span className="ac-label">Discount type</span>
+            {discountTypesError && (
+              <p className="ac-templates-warning">
+                <AlertTriangle size={14} strokeWidth={2.25} />
+                {discountTypesError}
+                <button type="button" className="ac-inline-retry" onClick={refreshDiscountTypes}>Retry</button>
+              </p>
+            )}
             <select
-              value={form.discountType}
-              onChange={handleChange('discountType')}
+              value={form.discountTypeId}
+              onChange={handleNumericSelectChange('discountTypeId')}
               className="ac-input"
+              disabled={discountTypesLoading || discountTypes.length === 0}
             >
-              {DISCOUNT_TYPES.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
+              {discountTypesLoading ? (
+                <option value="">Loading…</option>
+              ) : discountTypes.length === 0 ? (
+                <option value="">No discount types available</option>
+              ) : (
+                discountTypes.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.name}
+                  </option>
+                ))
+              )}
             </select>
           </label>
 
           <label className="ac-field">
-            <span className="ac-label">
-              {form.discountType === 'percentage' ? 'Value (%)' : 'Value ($)'}
-            </span>
+            <span className="ac-label">{discountValueLabel}</span>
             <input
               type="number"
               min="0"
@@ -153,8 +350,8 @@ function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
             type="number"
             min="0"
             step="0.01"
-            value={form.minSpend}
-            onChange={handleChange('minSpend')}
+            value={form.minSpendAmount}
+            onChange={handleChange('minSpendAmount')}
             placeholder="0"
             className="ac-input"
           />
@@ -166,8 +363,8 @@ function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
             <input
               type="date"
               required
-              value={form.issueLastDate}
-              onChange={handleChange('issueLastDate')}
+              value={form.issuingLastDate}
+              onChange={handleChange('issuingLastDate')}
               className="ac-input"
             />
           </label>
@@ -177,8 +374,8 @@ function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
             <input
               type="date"
               required
-              value={form.expiry}
-              onChange={handleChange('expiry')}
+              value={form.expiryDate}
+              onChange={handleChange('expiryDate')}
               className="ac-input"
             />
           </label>
@@ -210,8 +407,8 @@ function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
           ) : (
             <div className="ac-template-row">
               <select
-                value={form.template}
-                onChange={handleChange('template')}
+                value={form.templateId}
+                onChange={handleChange('templateId')}
                 className="ac-input ac-template-select"
               >
                 <option value="" disabled>Choose a template…</option>
@@ -248,11 +445,11 @@ function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
         </label>
 
         <div className="ac-actions">
-          <button type="button" onClick={onCancel} className="ac-cancel">
+          <button type="button" onClick={onCancel} className="ac-cancel" disabled={submitting}>
             Cancel
           </button>
-          <button type="submit" className="ac-submit">
-            Create Coupon
+          <button type="submit" className="ac-submit" disabled={submitting}>
+            {submitting ? 'Creating…' : 'Create Coupon'}
           </button>
         </div>
       </form>
@@ -463,6 +660,7 @@ function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
         }
         .ac-cancel:hover { background: #F7F6FA; }
         .ac-cancel:focus-visible { outline: 3px solid #1C1A24; outline-offset: 2px; }
+        .ac-cancel:disabled { opacity: 0.6; cursor: not-allowed; }
 
         .ac-submit {
           flex: 1;
@@ -480,6 +678,7 @@ function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
         }
         .ac-submit:hover { opacity: 0.92; }
         .ac-submit:focus-visible { outline: 3px solid #1C1A24; outline-offset: 2px; }
+        .ac-submit:disabled { opacity: 0.6; cursor: not-allowed; }
 
         @media (prefers-reduced-motion: reduce) {
           .ac-input, .ac-cancel, .ac-submit, .ac-library-btn { transition: none; }

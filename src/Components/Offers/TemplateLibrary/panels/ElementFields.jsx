@@ -1,10 +1,7 @@
 import React from 'react'
 import { Field, NumberField, ColorField } from './FormFields'
-import { DISPLAY_FONTS, BODY_FONTS } from '../lib/design'
+import { DISPLAY_FONTS, BODY_FONTS, SHAPE_KINDS } from '../lib/design'
 
-// Each text-bearing element stores its own `font` — picking a font
-// here only ever changes this one element. The picker lives inline
-// with the element instead of a shared Canvas panel section.
 function FontField({ label, value, options, onChange }) {
   return (
     <Field label={label}>
@@ -17,111 +14,131 @@ function FontField({ label, value, options, onChange }) {
   )
 }
 
-export function ElementFields({ elKey, draft, updateDraft }) {
-  const el = draft[elKey]
-  const fallbackColor = draft.colors.accentDark
+function SelectField({ label, value, options, onChange }) {
+  return (
+    <Field label={label}>
+      <select className="vs-input" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+    </Field>
+  )
+}
 
-  if (elKey === 'qr') {
+// `elKey` is the element's id; `path(field)` builds the dotted update
+// path for that element's field, e.g. "3.x" if elements is a flat array
+// addressed by index, or the id-based path the parent's updateDraft
+// expects — ElementsPanel passes in the already-resolved element object
+// plus a `set(field, value)` callback so this component stays agnostic
+// to how the parent addresses array items.
+export function ElementFields({ element, set, colors }) {
+  const fallbackColor = colors.accentDark
+
+  // Shared geometry controls every shape/image/text/qr element uses.
+  const Geometry = () => (
+    <div className="vs-field-row">
+      <NumberField label="X" value={element.x} onChange={(v) => set('x', v)} />
+      <NumberField label="Y" value={element.y} onChange={(v) => set('y', v)} />
+    </div>
+  )
+
+  const SizeAndRotation = () => (
+    <>
+      <div className="vs-field-row">
+        <NumberField label="Width" value={element.width} min={2} onChange={(v) => set('width', v)} />
+        <NumberField label="Height" value={element.height} min={2} onChange={(v) => set('height', v)} />
+      </div>
+      <NumberField label="Rotation" value={element.rotation || 0} step={1} onChange={(v) => set('rotation', v)} suffix="°" />
+    </>
+  )
+
+  const Opacity = () => (
+    <Field label="Opacity">
+      <div className="vs-intensity-row">
+        <input
+          type="range" min={0.05} max={1} step={0.05}
+          value={element.opacity ?? 1}
+          onChange={(e) => set('opacity', parseFloat(e.target.value))}
+          className="vs-intensity-slider"
+        />
+        <span className="vs-intensity-value">{Math.round((element.opacity ?? 1) * 100)}%</span>
+      </div>
+    </Field>
+  )
+
+    if (element.type === 'shape') {
     return (
       <>
-        <Field label="Redemption link / code">
-          <input className="vs-input" type="text" value={el.value} onChange={(e) => updateDraft('qr.value', e.target.value)} />
-        </Field>
-        <div className="vs-field-row">
-          <NumberField label="X" value={el.x} onChange={(v) => updateDraft('qr.x', v)} />
-          <NumberField label="Y" value={el.y} onChange={(v) => updateDraft('qr.y', v)} />
-        </div>
-        <NumberField label="Size" value={el.size} min={6} onChange={(v) => updateDraft('qr.size', v)} />
-        <ColorField label="Color" value={el.color} fallback={fallbackColor} onChange={(v) => updateDraft('qr.color', v)} onClear={() => updateDraft('qr.color', null)} />
+        <SelectField label="Shape" value={element.shape} options={SHAPE_KINDS} onChange={(v) => set('shape', v)} />
+        <Geometry />
+        <SizeAndRotation />
+        {element.shape === 'rect' && (
+          <NumberField label="Corner radius" value={element.cornerRadius || 0} min={0} onChange={(v) => set('cornerRadius', v)} />
+        )}
+        {element.shape === 'polygon' && (
+          <NumberField label="Sides" value={element.sides || 5} min={3} max={12} step={1} onChange={(v) => set('sides', v)} />
+        )}
+        {element.shape === 'star' && (
+          <NumberField label="Points" value={element.points || 5} min={3} max={12} step={1} onChange={(v) => set('points', v)} />
+        )}
+        <Opacity />
       </>
     )
   }
 
-  if (elKey === 'medallion') {
-    return (
-      <>
-        <div className="vs-field-row">
-          <NumberField label="Center X" value={el.cx} onChange={(v) => updateDraft('medallion.cx', v)} />
-          <NumberField label="Center Y" value={el.cy} onChange={(v) => updateDraft('medallion.cy', v)} />
-        </div>
-        <NumberField label="Radius" value={el.r} min={5} onChange={(v) => updateDraft('medallion.r', v)} />
-        <Field label="Value text">
-          <input className="vs-input" type="text" value={el.value} onChange={(e) => updateDraft('medallion.value', e.target.value)} />
-        </Field>
-        <NumberField label="Value font size" value={el.valueFontSize} min={2} onChange={(v) => updateDraft('medallion.valueFontSize', v)} />
-        <FontField label="Value font" value={el.valueFont} options={DISPLAY_FONTS} onChange={(v) => updateDraft('medallion.valueFont', v)} />
-        <Field label="Label text">
-          <input className="vs-input" type="text" value={el.label} onChange={(e) => updateDraft('medallion.label', e.target.value)} />
-        </Field>
-        <NumberField label="Label font size" value={el.labelFontSize} min={2} onChange={(v) => updateDraft('medallion.labelFontSize', v)} />
-        <FontField label="Label font" value={el.labelFont} options={BODY_FONTS} onChange={(v) => updateDraft('medallion.labelFont', v)} />
-        <ColorField label="Fill" value={el.fill} fallback={draft.colors.tint} onChange={(v) => updateDraft('medallion.fill', v)} onClear={() => updateDraft('medallion.fill', null)} />
-        <ColorField label="Stroke / text" value={el.stroke} fallback={fallbackColor} onChange={(v) => updateDraft('medallion.stroke', v)} onClear={() => updateDraft('medallion.stroke', null)} />
-      </>
-    )
-  }
-
-  if (elKey === 'cornerFlag') {
+  if (element.type === 'text') {
     return (
       <>
         <Field label="Text">
-          <input className="vs-input" type="text" value={el.text} onChange={(e) => updateDraft('cornerFlag.text', e.target.value)} />
+          <input className="vs-input" type="text" value={element.text} onChange={(e) => set('text', e.target.value)} />
         </Field>
-        <div className="vs-field-row">
-          <NumberField label="X" value={el.x} onChange={(v) => updateDraft('cornerFlag.x', v)} />
-          <NumberField label="Y" value={el.y} onChange={(v) => updateDraft('cornerFlag.y', v)} />
-        </div>
-        <NumberField label="Flag width" value={el.width} min={20} onChange={(v) => updateDraft('cornerFlag.width', v)} />
-        <FontField label="Font" value={el.font} options={BODY_FONTS} onChange={(v) => updateDraft('cornerFlag.font', v)} />
-        <ColorField label="Text color" value={el.color} fallback={draft.colors.onDark} onChange={(v) => updateDraft('cornerFlag.color', v)} onClear={() => updateDraft('cornerFlag.color', null)} />
+        <Geometry />
+        <NumberField label="Font size" value={element.fontSize} min={2} onChange={(v) => set('fontSize', v)} />
+        <FontField label="Font" value={element.font} options={[...DISPLAY_FONTS, ...BODY_FONTS]} onChange={(v) => set('font', v)} />
+        <NumberField label="Rotation" value={element.rotation || 0} step={1} onChange={(v) => set('rotation', v)} suffix="°" />
+        <ColorField label="Color" value={element.color} fallback={fallbackColor} onChange={(v) => set('color', v)} onClear={() => set('color', null)} />
+        <Opacity />
       </>
     )
   }
 
-  if (elKey === 'qrLabel') {
+  if (element.type === 'image') {
     return (
       <>
-        <Field label="Line 1">
-          <input className="vs-input" type="text" value={el.line1} onChange={(e) => updateDraft('qrLabel.line1', e.target.value)} />
+        <Field label="Image URL">
+          <input
+            className="vs-input" type="url" placeholder="https://example.com/image.jpg"
+            value={element.src || ''} onChange={(e) => set('src', e.target.value)}
+          />
         </Field>
-        <Field label="Line 2">
-          <input className="vs-input" type="text" value={el.line2} onChange={(e) => updateDraft('qrLabel.line2', e.target.value)} />
-        </Field>
-        <div className="vs-field-row">
-          <NumberField label="X" value={el.x} onChange={(v) => updateDraft('qrLabel.x', v)} />
-          <NumberField label="Y" value={el.y} onChange={(v) => updateDraft('qrLabel.y', v)} />
-        </div>
-        <NumberField label="Font size" value={el.fontSize} min={2} onChange={(v) => updateDraft('qrLabel.fontSize', v)} />
-        <FontField label="Font" value={el.font} options={BODY_FONTS} onChange={(v) => updateDraft('qrLabel.font', v)} />
-        <ColorField label="Color" value={el.color} fallback={fallbackColor} onChange={(v) => updateDraft('qrLabel.color', v)} onClear={() => updateDraft('qrLabel.color', null)} />
+        <Geometry />
+        <SizeAndRotation />
+        <SelectField
+          label="Fit"
+          value={element.fit}
+          options={[{ value: 'cover', label: 'Cover (crop to fill)' }, { value: 'contain', label: 'Contain (fit inside)' }]}
+          onChange={(v) => set('fit', v)}
+        />
+        <Opacity />
       </>
     )
   }
 
-  // headline, subtitle, expiry, terms share the same shape. Headline
-  // defaults to a display-style font and the rest to a body-style font,
-  // but each element's `font` is its own field — picking a font here
-  // only ever changes this one element, never any other text on the voucher.
-  const isDisplay = elKey === 'headline'
-  return (
-    <>
-      <Field label="Text">
-        <input className="vs-input" type="text" value={el.text} onChange={(e) => updateDraft(`${elKey}.text`, e.target.value)} />
-      </Field>
-      <div className="vs-field-row">
-        <NumberField label="X" value={el.x} onChange={(v) => updateDraft(`${elKey}.x`, v)} />
-        <NumberField label="Y" value={el.y} onChange={(v) => updateDraft(`${elKey}.y`, v)} />
-      </div>
-      <NumberField label="Font size" value={el.fontSize} min={2} onChange={(v) => updateDraft(`${elKey}.fontSize`, v)} />
-      <FontField
-        label="Font"
-        value={el.font}
-        options={isDisplay ? DISPLAY_FONTS : BODY_FONTS}
-        onChange={(v) => updateDraft(`${elKey}.font`, v)}
-      />
-      <ColorField label="Color" value={el.color} fallback={fallbackColor} onChange={(v) => updateDraft(`${elKey}.color`, v)} onClear={() => updateDraft(`${elKey}.color`, null)} />
-    </>
-  )
+  if (element.type === 'qr') {
+    return (
+      <>
+        <Field label="Redemption link / code">
+          <input className="vs-input" type="text" value={element.value} onChange={(e) => set('value', e.target.value)} />
+        </Field>
+        <Geometry />
+        <NumberField label="Size" value={element.size} min={6} onChange={(v) => set('size', v)} />
+        <ColorField label="Color" value={element.color} fallback={fallbackColor} onChange={(v) => set('color', v)} onClear={() => set('color', null)} />
+      </>
+    )
+  }
+
+  return null
 }
 
 export default ElementFields

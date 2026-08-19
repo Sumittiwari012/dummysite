@@ -1,20 +1,29 @@
 import React, { useState } from 'react'
 import { SIZE_PRESETS } from '../lib/design'
-import { Field, NumberField, ColorField } from './FormFields'
-import { PatternPickerField } from './PatternPickerField'
-import { RibbonPickerField } from './RibbonPickerField'
+import { ShapesPanel } from './ShapesPanel'
+import { TextPanel } from './TextPanel'
+import { ImagePanel } from './ImagePanel'
+import { DependenciesPanel } from './DependencyPanel'
 
 const SECTIONS = [
-  { key: 'size', label: 'Print size' },
-  { key: 'colors', label: 'Colors' },
-  { key: 'background', label: 'Background' },
-  { key: 'sidePanel', label: 'Side panel' },
-  { key: 'ribbon', label: 'Ribbon' },
-  { key: 'frame', label: 'Frame' },
+  { key: 'size', label: 'Size' },
+  { key: 'shapes', label: 'Shapes' },
+  { key: 'text', label: 'Text' },
+  { key: 'image', label: 'Image' },
+  { key: 'dependencies', label: 'Dependencies' },
 ]
 
-export function CanvasPanel({ draft, updateDraft }) {
+export function CanvasPanel({ draft, updateDraft, onAddElement, selected }) {
   const [activeSection, setActiveSection] = useState('size')
+
+  const activePreset = SIZE_PRESETS.find(
+    (p) => p.widthMM === draft.widthMM && p.heightMM === draft.heightMM
+  )
+
+  const applyPreset = (preset) => {
+    updateDraft('widthMM', preset.widthMM)
+    updateDraft('heightMM', preset.heightMM)
+  }
 
   return (
     <div className="vs-section-stack">
@@ -33,157 +42,71 @@ export function CanvasPanel({ draft, updateDraft }) {
 
       {activeSection === 'size' && (
         <section className="vs-section">
-          <h4 className="vs-section-title">Print size</h4>
+          <h4 className="vs-section-title">Size</h4>
           <div className="vs-preset-row">
             {SIZE_PRESETS.map((p) => (
               <button
                 type="button"
                 key={p.label}
-                className={`vs-chip ${draft.widthMM === p.widthMM && draft.heightMM === p.heightMM ? 'vs-chip--active' : ''}`}
-                onClick={() => {
-                  updateDraft('widthMM', p.widthMM)
-                  updateDraft('heightMM', p.heightMM)
-                }}
+                className={`vs-chip ${activePreset?.label === p.label ? 'vs-chip--active' : ''}`}
+                onClick={() => applyPreset(p)}
               >
                 {p.label}
               </button>
             ))}
           </div>
+
           <div className="vs-field-row">
-            <NumberField label="Width (mm)" value={draft.widthMM} step={0.1} min={20} onChange={(v) => updateDraft('widthMM', v)} suffix="mm" />
-            <NumberField label="Height (mm)" value={draft.heightMM} step={0.1} min={20} onChange={(v) => updateDraft('heightMM', v)} suffix="mm" />
-          </div>
-        </section>
-      )}
-
-      {activeSection === 'colors' && (
-        <section className="vs-section">
-          <h4 className="vs-section-title">Colors</h4>
-          <ColorField label="Accent" value={draft.colors.accent} fallback="#B9762E" onChange={(v) => updateDraft('colors.accent', v)} onClear={() => updateDraft('colors.accent', '#B9762E')} />
-          <ColorField label="Accent (dark)" value={draft.colors.accentDark} fallback="#8F5720" onChange={(v) => updateDraft('colors.accentDark', v)} onClear={() => updateDraft('colors.accentDark', '#8F5720')} />
-          <ColorField label="Background tint" value={draft.colors.tint} fallback="#FBF3E8" onChange={(v) => updateDraft('colors.tint', v)} onClear={() => updateDraft('colors.tint', '#FBF3E8')} />
-          <ColorField label="Text on dark panel" value={draft.colors.onDark} fallback="#FFFFFF" onChange={(v) => updateDraft('colors.onDark', v)} onClear={() => updateDraft('colors.onDark', '#FFFFFF')} />
-        </section>
-      )}
-
-      {activeSection === 'background' && (
-        <>
-          <section className="vs-section">
-            <h4 className="vs-section-title">Background image</h4>
-            <Field label="Image URL">
+            <label className="vs-field">
+              <span className="vs-field-label">Width (mm)</span>
               <input
-                className="vs-input"
-                type="url"
-                placeholder="https://example.com/image.jpg"
-                value={draft.layers.backgroundImage || ''}
-                onChange={(e) => updateDraft('layers.backgroundImage', e.target.value || null)}
+                type="number"
+                className="vs-input vs-input--number"
+                value={draft.widthMM}
+                step={0.1}
+                min={1}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value)
+                  updateDraft('widthMM', Number.isFinite(v) ? v : draft.widthMM)
+                }}
               />
-            </Field>
-
-            {draft.layers.backgroundImage && (
-              <>
-                <Field label="Image opacity">
-                  <div className="vs-intensity-row">
-                    <input
-                      type="range"
-                      min={0.05}
-                      max={1}
-                      step={0.05}
-                      value={draft.layers.backgroundImageOpacity ?? 1}
-                      onChange={(e) => updateDraft('layers.backgroundImageOpacity', parseFloat(e.target.value))}
-                      className="vs-intensity-slider"
-                    />
-                    <span className="vs-intensity-value">
-                      {Math.round((draft.layers.backgroundImageOpacity ?? 1) * 100)}%
-                    </span>
-                  </div>
-                </Field>
-                <button
-                  type="button"
-                  className="vs-btn vs-btn--ghost vs-btn--small"
-                  onClick={() => {
-                    updateDraft('layers.backgroundImage', null)
-                    updateDraft('layers.backgroundImageOpacity', null)
-                  }}
-                >
-                  Remove image
-                </button>
-              </>
-            )}
-          </section>
-
-          <PatternPickerField
-            title="Background pattern"
-            styleValue={draft.layers.backgroundPattern}
-            colorValue={draft.layers.backgroundPatternColor}
-            opacityValue={draft.layers.backgroundPatternOpacity}
-            accentFallback={draft.colors.accent}
-            onChangeStyle={(v) => updateDraft('layers.backgroundPattern', v)}
-            onChangeColor={(v) => updateDraft('layers.backgroundPatternColor', v)}
-            onChangeOpacity={(v) => updateDraft('layers.backgroundPatternOpacity', v)}
-          />
-        </>
-      )}
-
-      {activeSection === 'sidePanel' && (
-        <section className="vs-section">
-          <h4 className="vs-section-title">Side panel</h4>
-          <label className="vs-toggle-row">
-            <input
-              type="checkbox"
-              checked={draft.layers.sidePanel}
-              onChange={(e) => updateDraft('layers.sidePanel', e.target.checked)}
-            />
-            <span>Show side panel</span>
-          </label>
-
-          {draft.layers.sidePanel && (
-            <>
-              <PatternPickerField
-                title="Side panel pattern"
-                styleValue={draft.layers.sidePanelPattern}
-                colorValue={draft.layers.sidePanelPatternColor}
-                opacityValue={draft.layers.sidePanelPatternOpacity}
-                accentFallback={draft.colors.onDark}
-                onChangeStyle={(v) => updateDraft('layers.sidePanelPattern', v)}
-                onChangeColor={(v) => updateDraft('layers.sidePanelPatternColor', v)}
-                onChangeOpacity={(v) => updateDraft('layers.sidePanelPatternOpacity', v)}
+            </label>
+            <label className="vs-field">
+              <span className="vs-field-label">Height (mm)</span>
+              <input
+                type="number"
+                className="vs-input vs-input--number"
+                value={draft.heightMM}
+                step={0.1}
+                min={1}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value)
+                  updateDraft('heightMM', Number.isFinite(v) ? v : draft.heightMM)
+                }}
               />
-              <label className="vs-toggle-row">
-                <input
-                  type="checkbox"
-                  checked={draft.layers.dots}
-                  onChange={(e) => updateDraft('layers.dots', e.target.checked)}
-                />
-                <span>Dot pattern on panel</span>
-              </label>
-            </>
-          )}
+            </label>
+          </div>
+
+          <p className="vs-section-hint">
+            {draft.widthMM}mm × {draft.heightMM}mm — {(draft.widthMM / 25.4).toFixed(2)}in × {(draft.heightMM / 25.4).toFixed(2)}in
+          </p>
         </section>
       )}
 
-      {activeSection === 'ribbon' && (
-        <RibbonPickerField
-          styleValue={draft.layers.ribbonStyle}
-          colorValue={draft.layers.ribbonColor}
-          accentFallback={draft.colors.accent}
-          onChangeStyle={(v) => updateDraft('layers.ribbonStyle', v)}
-          onChangeColor={(v) => updateDraft('layers.ribbonColor', v)}
-        />
+      {activeSection === 'shapes' && (
+        <ShapesPanel draft={draft} updateDraft={updateDraft} onAdd={onAddElement} />
       )}
 
-      {activeSection === 'frame' && (
-        <section className="vs-section">
-          <h4 className="vs-section-title">Frame</h4>
-          <label className="vs-toggle-row">
-            <input
-              type="checkbox"
-              checked={draft.layers.frame}
-              onChange={(e) => updateDraft('layers.frame', e.target.checked)}
-            />
-            <span>Outer frame border</span>
-          </label>
-        </section>
+      {activeSection === 'text' && (
+        <TextPanel draft={draft} updateDraft={updateDraft} onAdd={onAddElement} />
+      )}
+
+      {activeSection === 'image' && (
+        <ImagePanel draft={draft} updateDraft={updateDraft} onAdd={onAddElement} />
+      )}
+
+      {activeSection === 'dependencies' && (
+        <DependenciesPanel draft={draft} updateDraft={updateDraft} selected={selected} />
       )}
     </div>
   )

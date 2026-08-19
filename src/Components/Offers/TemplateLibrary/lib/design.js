@@ -1,73 +1,205 @@
 // -----------------------------------------------------------------------
-// The single base voucher design. Every color, font, illustration layer,
-// text position, QR position/size, and the physical print size (mm) live
-// on this object and are editable in the studio. Nothing here is fixed.
+// The single base voucher design. Color, illustration layer, QR
+// position/size, and the physical print size (mm) live on this object
+// and are editable in the studio. The old fixed text slots (corner
+// flag, headline, subtitle, expiry, terms, medallion) have been
+// removed — only the QR code + its caption remain as named slots.
+// Everything else (shapes/text/images/QR) is added freeform via the
+// Canvas panel and lives in `elements`.
+// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// The single base voucher design. ...
 // -----------------------------------------------------------------------
 export function baseDesign() {
   return {
     name: 'Untitled voucher',
-    widthMM: 152.4, // 6in
-    heightMM: 76.2, // 3in
-    colors: {
+    widthMM: 152.4,
+    heightMM: 76.2,
+    dependencies: makeBlankDependencies(),
+    colors: { /* unchanged */
       accent: '#B9762E',
       accentDark: '#8F5720',
       tint: '#FBF3E8',
       onDark: '#FFFFFF',
     },
-    layers: {
-       backgroundPattern: 'texture',
-       backgroundPatternColor: null,
-       backgroundPatternOpacity: null,
-      backgroundImage: null, // null = no image; otherwise an image URL
-      backgroundImageOpacity: null, // null = fully opaque (1); 0–1 otherwise
-       sidePanelPattern: 'none',
-       sidePanelPatternColor: null,
-       sidePanelPatternOpacity: null,
-       sidePanel: true,
-       dots: true,
-       ribbonStyle: 'diagonal',
-       ribbonColor: null,
-       frame: true,
-     },
-    // Each text-bearing element carries its own `font` — picking a font
-    // for one element never touches any other element's font.
-    cornerFlag: { visible: true, text: 'LOREM IPSUM', x: 23, y: 10.5, width: 46, color: null, font: "'Inter', sans-serif" },
-    headline: { visible: true, text: 'SAVE', x: 10, y: 32, fontSize: 15, color: null, font: "'Space Grotesk', sans-serif" },
-    subtitle: { visible: true, text: 'VOUCHER', x: 10, y: 41, fontSize: 5.5, color: null, font: "'Inter', sans-serif" },
-    expiry: { visible: true, text: 'VALID TILL 12/31/26', x: 10, y: 51, fontSize: 5, color: null, font: "'Inter', sans-serif" },
+    layers: { /* unchanged */
+      backgroundPattern: 'texture',
+      backgroundPatternColor: null,
+      backgroundPatternOpacity: null,
+      backgroundImage: null,
+      backgroundImageOpacity: null,
+      sidePanelPattern: 'none',
+      sidePanelPatternColor: null,
+      sidePanelPatternOpacity: null,
+      sidePanel: true,
+      dots: true,
+      ribbonStyle: 'diagonal',
+      ribbonColor: null,
+      frame: true,
+    },
+    // Freeform layer for shapes/text/images/QR codes added via the
+    // Canvas panel. Array order IS stacking order — front = last item.
+    // No separate per-type ordering; dragging an element on the canvas
+    // moves it to the end of this array (see TemplateLibrary's
+    // onBeginDrag).
+    elements: [],
     qr: { visible: true, value: 'https://yourstore.com/redeem', x: 10, y: 57, size: 17, color: null },
     qrLabel: { visible: true, line1: 'SCAN TO', line2: 'REDEEM', x: 30, y: 64, fontSize: 4.3, color: null, font: "'Inter', sans-serif" },
-    terms: { visible: true, text: 'Terms & conditions apply. Not valid with other offers.', x: 10, y: 93, fontSize: 3.3, color: null, font: "'Inter', sans-serif" },
-    medallion: {
-      visible: true, cx: 121, cy: 50, r: 22,
-      value: '25%', valueFontSize: 10, valueFont: "'Space Grotesk', sans-serif",
-      label: 'OFF', labelFontSize: 5.5, labelFont: "'Inter', sans-serif",
-      fill: null, stroke: null,
-    },
   }
 }
 
+// -----------------------------------------------------------------------
+// A blank starting point for brand-new templates — same shape as
+// baseDesign() (so every field the editor/canvas expects is present),
+// but with every decorative layer switched off and the QR hidden. The
+// canvas renders as a plain white rectangle until the person adds
+// shapes, text, or an image via the Shapes/Text/Image panel.
+// -----------------------------------------------------------------------
+export function blankDesign() {
+  return {
+    name: 'Untitled voucher',
+    widthMM: 152.4,
+    heightMM: 76.2,
+    dependencies: makeBlankDependencies(),
+    colors: {
+      accent: '#B9762E',
+      accentDark: '#8F5720',
+      tint: '#FFFFFF',
+      onDark: '#FFFFFF',
+    },
+    layers: {
+      backgroundPattern: 'none',
+      backgroundPatternColor: null,
+      backgroundPatternOpacity: null,
+      backgroundImage: null,
+      backgroundImageOpacity: null,
+      sidePanelPattern: 'none',
+      sidePanelPatternColor: null,
+      sidePanelPatternOpacity: null,
+      sidePanel: false,
+      dots: false,
+      ribbonStyle: 'none',
+      ribbonColor: null,
+      frame: false,
+    },
+    elements: [],
+    qr: { visible: false, value: '', x: 10, y: 57, size: 17, color: null },
+    qrLabel: { visible: false, line1: '', line2: '', x: 30, y: 64, fontSize: 4.3, color: null, font: "'Inter', sans-serif" },
+  }
+}
+
+// The default stacking order of element *types* — independent of when
+// an individual element was added. draft.layerOrder holds the current
+// order (front = last); the person can reorder it via the Layers
+// control in ElementsPanel, which lets any type come above any other,
+// not a fixed hierarchy. New elements always join at the front *within
+// their own type's slice* (see VoucherCanvas's grouping + ElementsPanel's
+// move()), never jumping in front of a different type just by being
+// added later.
+
+
 export const ELEMENT_POS_KEYS = {
-  cornerFlag: ['x', 'y'],
-  headline: ['x', 'y'],
-  subtitle: ['x', 'y'],
-  expiry: ['x', 'y'],
   qr: ['x', 'y'],
   qrLabel: ['x', 'y'],
-  terms: ['x', 'y'],
-  medallion: ['cx', 'cy'],
+}
+
+// Mirrors GripStyleBackend.Models.MCoupon exactly — one entry per
+// property on that model, in the same order. `key` is the C# property
+// name verbatim, used both as the display label and as the token
+// inside `template`. If a property is ever renamed on the backend,
+// rename it here too and everything downstream (design JSON, panel,
+// backend substitution) stays in sync.
+export const DEPENDENCY_FIELDS = [
+  { key: 'Name', template: '{{Name}}' },
+  { key: 'DiscountPercentage', template: '{{DiscountPercentage}}' },
+  { key: 'DiscountAmount', template: '{{DiscountAmount}}' },
+  { key: 'MinSpendAmount', template: '{{MinSpendAmount}}' },
+  { key: 'ExpiryDate', template: '{{ExpiryDate}}' },
+]
+
+// draft.dependencies lives directly on the design object (see
+// baseDesign()/blankDesign() above) and is saved/loaded with the rest
+// of the template through the normal Template API — no separate
+// payload step. Every MCoupon key is always present on this object; a
+// key holds its template token once the person has used it somewhere
+// on the canvas, and stays '' otherwise.
+export function makeBlankDependencies() {
+  const obj = {}
+  DEPENDENCY_FIELDS.forEach(({ key }) => { obj[key] = '' })
+  return obj
+}
+
+// Fills in any missing dependency keys on an existing (possibly older)
+// design without touching keys it already has — used when opening a
+// template saved before `dependencies` existed on the shape.
+export function normalizeDependencies(dependencies) {
+  return { ...makeBlankDependencies(), ...(dependencies || {}) }
+}
+
+// Named slots (+ field) that a dependency token can be inserted into.
+// Only `qr` remains as a fixed named slot; freeform `elements` of type
+// 'text' are handled separately in DependenciesPanel since they live
+// in draft.elements, not as a fixed top-level key.
+export const DEPENDENCY_TARGET_FIELDS = {
+  qr: 'value',
 }
 
 export const ELEMENT_LABELS = {
-  cornerFlag: 'Corner flag',
-  headline: 'Headline word',
-  subtitle: 'Subtitle label',
-  expiry: 'Expiry date',
   qr: 'QR code',
   qrLabel: 'QR caption',
-  terms: 'Terms text',
-  medallion: 'Value medallion',
 }
+
+// Labels for elements placed in the freeform `elements` array (used by
+// ElementsPanel), distinct from ELEMENT_LABELS above which covers the
+// fixed named slots (qr, qrLabel).
+export const ELEMENT_TYPE_LABELS = {
+  shape: 'Shape',
+  text: 'Text',
+  image: 'Image',
+  qr: 'QR code',
+}
+
+let elementIdCounter = 0
+export function makeId(type) {
+  elementIdCounter += 1
+  return `${type}-${Date.now()}-${elementIdCounter}`
+}
+
+export function elementSummary(el) {
+  if (el.type === 'text') return el.text?.trim() ? el.text.slice(0, 18) : 'Text'
+  if (el.type === 'shape') return el.shape ? el.shape[0].toUpperCase() + el.shape.slice(1) : 'Shape'
+  if (el.type === 'image') return 'Image'
+  if (el.type === 'qr') return 'QR code'
+  return ELEMENT_TYPE_LABELS[el.type] || 'Element'
+}
+
+export const SHAPE_KINDS = [
+  { value: 'rect', label: 'Rectangle' },
+  { value: 'ellipse', label: 'Ellipse' },
+  { value: 'line', label: 'Line' },
+  { value: 'polygon', label: 'Polygon' },
+  { value: 'star', label: 'Star' },
+  { value: 'triangle', label: 'Triangle' },
+  { value: 'diamond', label: 'Diamond' },
+  { value: 'pentagon', label: 'Pentagon' },
+  { value: 'hexagon', label: 'Hexagon' },
+  { value: 'heptagon', label: 'Heptagon' },
+  { value: 'octagon', label: 'Octagon' },
+  { value: 'rightTriangle', label: 'Right triangle' },
+  { value: 'parallelogram', label: 'Parallelogram' },
+  { value: 'trapezoid', label: 'Trapezoid' },
+  { value: 'arrowRight', label: 'Arrow right' },
+  { value: 'arrowLeft', label: 'Arrow left' },
+  { value: 'arrowUp', label: 'Arrow up' },
+  { value: 'arrowDown', label: 'Arrow down' },
+  { value: 'doubleArrow', label: 'Double arrow' },
+  { value: 'chevron', label: 'Chevron' },
+  { value: 'cross', label: 'Cross' },
+  { value: 'heart', label: 'Heart' },
+  { value: 'speechBubble', label: 'Speech bubble' },
+  { value: 'cloud', label: 'Cloud' },
+  { value: 'halfCircle', label: 'Half circle' },
+]
 
 export const DISPLAY_FONTS = [
   { label: 'Space Grotesk', value: "'Space Grotesk', sans-serif" },

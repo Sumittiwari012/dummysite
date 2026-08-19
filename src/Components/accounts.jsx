@@ -196,7 +196,6 @@ export default function Accounts() {
       "Taxable": inv.totalTaxable,
       "CGST": inv.totalCgst,
       "SGST": inv.totalSgst,
-      "IGST": inv.totalIgst,
       "Tax": inv.totalTax,
       "Discount": inv.discount,
       "Total (Incl. GST)": inv.totalInclusive,
@@ -216,8 +215,6 @@ export default function Accounts() {
         "CGST ₹": d.cgstValue,
         "SGST %": d.sgstPercent,
         "SGST ₹": d.sgstValue,
-        "IGST %": d.igstPercent,
-        "IGST ₹": d.igstValue,
         "Total": d.inclusiveTotal,
         "Profit": d.profit
       }))
@@ -243,7 +240,6 @@ export default function Accounts() {
       "Taxable": r.totalTaxable,
       "CGST": r.totalCgst,
       "SGST": r.totalSgst,
-      "IGST": r.totalIgst,
       "Tax": r.totalTax,
       "Total (Incl. GST)": r.totalInclusive,
       "Profit Reversed": r.totalProfit
@@ -263,8 +259,6 @@ export default function Accounts() {
         "CGST ₹": d.cgstValue,
         "SGST %": d.sgstPercent,
         "SGST ₹": d.sgstValue,
-        "IGST %": d.igstPercent,
-        "IGST ₹": d.igstValue,
         "Total": d.inclusiveTotal,
         "Profit Reversed": d.profit
       }))
@@ -533,8 +527,6 @@ export default function Accounts() {
                                       <th style={thStyleSmall}>CGST ₹</th>
                                       <th style={thStyleSmall}>SGST %</th>
                                       <th style={thStyleSmall}>SGST ₹</th>
-                                      <th style={thStyleSmall}>IGST %</th>
-                                      <th style={thStyleSmall}>IGST ₹</th>
                                       <th style={thStyleSmall}>Total</th>
                                       <th style={thStyleSmall}>Profit</th>
                                     </tr>
@@ -551,8 +543,6 @@ export default function Accounts() {
                                         <td style={tdStyleSmall}>{formatCurrency(d.cgstValue)}</td>
                                         <td style={tdStyleSmall}>{d.sgstPercent}%</td>
                                         <td style={tdStyleSmall}>{formatCurrency(d.sgstValue)}</td>
-                                        <td style={tdStyleSmall}>{d.igstPercent}%</td>
-                                        <td style={tdStyleSmall}>{formatCurrency(d.igstValue)}</td>
                                         <td style={tdStyleSmall}>{formatCurrency(d.inclusiveTotal)}</td>
                                         <td style={{ ...tdStyleSmall, color: profitColor(d.profit) }}>{formatSigned(d.profit)}</td>
                                       </tr>
@@ -679,8 +669,6 @@ export default function Accounts() {
                                       <th style={thStyleSmall}>CGST ₹</th>
                                       <th style={thStyleSmall}>SGST %</th>
                                       <th style={thStyleSmall}>SGST ₹</th>
-                                      <th style={thStyleSmall}>IGST %</th>
-                                      <th style={thStyleSmall}>IGST ₹</th>
                                       <th style={thStyleSmall}>Total</th>
                                       <th style={thStyleSmall}>Profit</th>
                                     </tr>
@@ -697,8 +685,6 @@ export default function Accounts() {
                                         <td style={tdStyleSmall}>{formatCurrency(d.cgstValue)}</td>
                                         <td style={tdStyleSmall}>{d.sgstPercent}%</td>
                                         <td style={tdStyleSmall}>{formatCurrency(d.sgstValue)}</td>
-                                        <td style={tdStyleSmall}>{d.igstPercent}%</td>
-                                        <td style={tdStyleSmall}>{formatCurrency(d.igstValue)}</td>
                                         <td style={tdStyleSmall}>{formatCurrency(d.inclusiveTotal)}</td>
                                         <td style={{ ...tdStyleSmall, color: "#c62828" }}>{formatProfit(d.profit)}</td>
                                       </tr>

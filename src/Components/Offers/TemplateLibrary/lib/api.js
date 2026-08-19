@@ -12,8 +12,15 @@ import { baseDesign } from './design'
 // widthMM/heightMM are often fractional (e.g. 76.2mm). Those columns are
 // only used for quick sorting/filtering server-side, so we store them
 // as tenths of a millimeter. The full-precision values always live in
-// `Config`, which holds the entire design object — Config is the
+// `Config`, which holds the entire design object (name, widthMM,
+// heightMM, colors, and the freeform `elements` array) — Config is the
 // source of truth on the frontend.
+//
+// A `dependency` element inside `elements` only ever stores which
+// MCoupon field it's bound to (plus its own styling) — never a value.
+// Real coupon values (Name, DiscountPercentage, DiscountAmount,
+// MinSpendAmount, IssuingLastdate, ExpiryDate) live on the Coupon
+// record itself, not here, and are supplied separately at render time.
 // -----------------------------------------------------------------------
 export const API_BASE = 'https://dummypossetup.runasp.net/api/Template'
 
@@ -27,11 +34,19 @@ export function designToPayload(design) {
 }
 
 // Merges the saved config back over a fresh baseDesign() so older saved
-// templates that predate a newly-added field still render correctly,
-// then stamps on the backend id (as a string, for consistency with the
-// rest of the UI) and a display name.
+// templates that predate a newly-added top-level field (name, colors,
+// etc.) still render correctly. `elements` is replaced wholesale rather
+// than deep-merged — it's a freeform ordered list, not a fixed set of
+// named slots, so merging it index-by-index against baseDesign()'s
+// (empty) array would be meaningless. This also guarantees a template's
+// saved elements — including which fields are or aren't bound as
+// dependencies — always come from `entity.config` alone, never patched
+// with anything else.
 export function entityToDesign(entity) {
-  const merged = _.merge(baseDesign(), entity.config || {})
+  const config = entity.config || {}
+  const merged = _.mergeWith({}, baseDesign(), config, (objValue, srcValue) =>
+    Array.isArray(srcValue) ? srcValue : undefined
+  )
   merged.id = String(entity.id)
   merged.name = merged.name || entity.templateName || 'Untitled voucher'
   return merged
