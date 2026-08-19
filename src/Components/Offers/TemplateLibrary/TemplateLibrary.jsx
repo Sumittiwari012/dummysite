@@ -6,13 +6,13 @@ import {
   LayoutTemplate, Move, AlertTriangle, X, Eye
 } from 'lucide-react'
 
-import { baseDesign, blankDesign, ELEMENT_POS_KEYS, round1 } from './TemplateLibrary/lib/design'
+import { baseDesign, blankDesign, ELEMENT_POS_KEYS, round1 } from './lib/design'
 import {
   apiGetAllTemplates, apiCreateTemplate, apiUpdateTemplate, apiDeleteTemplate,
 } from './lib/api'
-import { VoucherCanvas } from './TemplateLibrary/components/VoucherCanvas'
-import { GlobalStyles } from './TemplateLibrary/components/GlobalStyles'
-import { CanvasPanel } from './TemplateLibrary/panels/CanvasPanel'
+import { VoucherCanvas } from './components/VoucherCanvas'
+import { GlobalStyles } from './components/GlobalStyles'
+import { CanvasPanel } from './panels/CanvasPanel'
 
 // -----------------------------------------------------------------------
 // Main studio: gallery of saved designs (Add button only, no presets) +
