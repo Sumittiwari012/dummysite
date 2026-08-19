@@ -1,6 +1,6 @@
 import React from 'react'
 import { QrCells } from './QrCells'
-
+import { resolveStackOrder } from '../lib/design'
 // -----------------------------------------------------------------------
 // The voucher canvas. Renders the named-field design object produced by
 // baseDesign()/blankDesign() in lib/design.js — qr, qrLabel — plus a
@@ -105,6 +105,7 @@ function elementBounds(key, el) {
 // width/height box, since elementBounds derives text's box from
 // fontSize + text length.
 function isResizable(key, el) {
+  if (key === 'qr') return true
   return (el.type === 'shape' && el.shape !== 'line') || el.type === 'image' || el.type === 'text'
 }
 
@@ -163,26 +164,25 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
   const ROTATE_OFFSET = 9 // distance (svg units) above the selection box
 
   const resizeHandles = (key, el) => {
-    if (!interactive || selectedKey !== key || !isResizable(key, el)) return null
-    const b = elementBounds(key, el)
-    const corners = [
-      { corner: 'tl', cx: b.x, cy: b.y },
-      { corner: 'tr', cx: b.x + b.w, cy: b.y },
-      { corner: 'bl', cx: b.x, cy: b.y + b.h },
-      { corner: 'br', cx: b.x + b.w, cy: b.y + b.h },
-    ]
-    const cursorFor = { tl: 'nwse-resize', br: 'nwse-resize', tr: 'nesw-resize', bl: 'nesw-resize' }
-    return corners.map(({ corner, cx, cy }) => (
-      <rect
-        key={corner}
-        x={cx - HANDLE / 2} y={cy - HANDLE / 2} width={HANDLE} height={HANDLE}
-        fill="#FFFFFF" stroke="#2E7DB0" strokeWidth={0.5}
-        style={{ cursor: cursorFor[corner] }}
-        onPointerDown={handleResizePointerDown(key, corner)}
-      />
-    ))
-  }
-
+  if (!interactive || selectedKey !== key || !isResizable(key, el)) return null
+  const b = elementBounds(key, el)
+  const corners = [
+    { corner: 'tl', cx: b.x, cy: b.y },
+    { corner: 'tr', cx: b.x + b.w, cy: b.y },
+    { corner: 'bl', cx: b.x, cy: b.y + b.h },
+    { corner: 'br', cx: b.x + b.w, cy: b.y + b.h },
+  ]
+  const cursorFor = { tl: 'nwse-resize', br: 'nwse-resize', tr: 'nesw-resize', bl: 'nesw-resize' }
+  return corners.map(({ corner, cx, cy }) => (
+    <rect
+      key={corner}
+      x={cx - HANDLE / 2} y={cy - HANDLE / 2} width={HANDLE} height={HANDLE}
+      fill="#FFFFFF" stroke="#2E7DB0" strokeWidth={0.5}
+      style={{ cursor: cursorFor[corner] }}
+      onPointerDown={handleResizePointerDown(key, corner)}
+    />
+  ))
+}
   const rotateHandle = (key, el) => {
     if (!interactive || selectedKey !== key || !isRotatable(key, el)) return null
     const b = elementBounds(key, el)
@@ -339,10 +339,12 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
           />
         )}
 
-        {renderQr()}
-        {renderQrLabel()}
-
-        {elements.map(renderFreeformElement)}
+        {resolveStackOrder(design).map((key) => {
+  if (key === 'qr') return renderQr()
+  if (key === 'qrLabel') return renderQrLabel()
+  const el = elements.find((item) => item.id === key)
+  return el ? renderFreeformElement(el) : null
+})}
 
         {layers.frame && (
           <rect x={0.5} y={0.5} width={viewW - 1} height={viewH - 1} rx={3.5} fill="none" stroke={c.accent} strokeWidth={0.6} />

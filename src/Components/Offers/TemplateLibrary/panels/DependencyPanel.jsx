@@ -1,68 +1,37 @@
 import React from 'react'
 import { Link2, X } from 'lucide-react'
-import { DEPENDENCY_FIELDS, DEPENDENCY_TARGET_FIELDS, ELEMENT_LABELS } from '../lib/design'
+import { DEPENDENCY_FIELDS, makeId } from '../lib/design'
 
-const NAMED_KEYS = Object.keys(DEPENDENCY_TARGET_FIELDS)
-
-// Resolves what the currently-selected canvas item is and whether a
-// dependency token can be inserted into it:
-//  - a named slot (headline, terms, qr, medallion, ...) → its field is
-//    looked up in DEPENDENCY_TARGET_FIELDS
-//  - a freeform element from draft.elements → only type 'text' qualifies
-function resolveTarget(draft, selected) {
-  if (!selected) return null
-
-  if (NAMED_KEYS.includes(selected)) {
-    const field = DEPENDENCY_TARGET_FIELDS[selected]
-    const node = draft[selected]
-    if (!node) return null
-    return {
-      label: ELEMENT_LABELS[selected] || selected,
-      currentValue: node[field] || '',
-      path: `${selected}.${field}`,
-    }
-  }
-
-  const el = (draft.elements || []).find((item) => item.id === selected)
-  if (!el || el.type !== 'text') return null
-  return {
-    label: el.text?.trim() ? el.text.slice(0, 18) : 'Text element',
-    currentValue: el.text || '',
-    path: null,
-    elementId: el.id,
-  }
-}
-
-export function DependenciesPanel({ draft, updateDraft, selected }) {
-  const target = resolveTarget(draft, selected)
+// Dependencies are no longer tied to whatever's selected on the canvas.
+// Clicking a chip always drops a brand-new freeform text element
+// containing the token (e.g. "{{Name}}") onto the canvas. From there
+// it's just a normal text element — the person can drag it, restyle
+// it, or delete it like anything else. The dependency is still marked
+// "used" on draft.dependencies so it round-trips through save/load.
+export function DependenciesPanel({ draft, updateDraft, onSelect }) {
   const dependencies = draft.dependencies || {}
+  const elements = draft.elements || []
 
-  // Inserting a token does two things to the design JSON:
-  //  1. appends the token text into whichever field is selected (same
-  //     as before)
-  //  2. sets draft.dependencies[key] to its template value, so the
-  //     saved JSON records that this field is in use — this is the
-  //     part that actually persists through save/load, independent of
-  //     where on the canvas the token ended up.
   function insertToken(key, template) {
-    if (!target) return
-
-    if (target.path) {
-      updateDraft(target.path, `${target.currentValue}${template}`)
-    } else {
-      const elements = draft.elements || []
-      const next = elements.map((el) =>
-        el.id === target.elementId ? { ...el, text: `${target.currentValue}${template}` } : el
-      )
-      updateDraft('elements', next)
+    const newEl = {
+      id: makeId('text'),
+      type: 'text',
+      text: template,
+      x: 20,
+      y: 20 + (elements.length % 8) * 6, // stagger repeated inserts so they don't stack exactly
+      fontSize: 5,
+      fontWeight: 600,
+      color: null,
+      bgColor: 'transparent',
+      opacity: 1,
+      font: "'Inter', sans-serif",
+      visible: true,
     }
-
+    updateDraft('elements', [...elements, newEl])
     updateDraft(`dependencies.${key}`, template)
+    onSelect && onSelect(newEl.id) // select it immediately so it's easy to drag/style
   }
 
-  // Marks a dependency as unused again (blanks it in the JSON) without
-  // touching whatever text was already placed on the canvas — the
-  // person can still delete/edit the token text themselves.
   function clearDependency(key) {
     updateDraft(`dependencies.${key}`, '')
   }
@@ -72,23 +41,9 @@ export function DependenciesPanel({ draft, updateDraft, selected }) {
       <h4 className="vs-section-title">Dependencies</h4>
 
       <p className="vs-section-hint">
-        These map 1:1 to <code>MCoupon</code> fields. Click one to insert its token into the
-        currently selected text element — the field's value is then stored on the template; unused
-        fields are saved blank.
+        These map 1:1 to <code>MCoupon</code> fields. Click one to drop its token onto the
+        canvas as a new text box — move it, restyle it, or delete it like any other element.
       </p>
-
-      {!target && (
-        <p className="vs-section-hint vs-section-hint--muted">
-          Select a text element on the canvas (headline, terms, a text box, etc.) to insert a
-          dependency into it.
-        </p>
-      )}
-
-      {target && (
-        <p className="vs-section-hint">
-          Inserting into: <strong>{target.label}</strong>
-        </p>
-      )}
 
       <div className="vs-preset-row">
         {DEPENDENCY_FIELDS.map((f) => {
@@ -99,8 +54,7 @@ export function DependenciesPanel({ draft, updateDraft, selected }) {
               key={f.key}
               className={`vs-chip ${used ? 'vs-chip--active' : ''}`}
               onClick={() => insertToken(f.key, f.template)}
-              disabled={!target}
-              title={target ? `Insert ${f.template}` : 'Select a text element first'}
+              title={`Insert ${f.template}`}
             >
               <Link2 size={12} strokeWidth={2.25} />
               {f.key}

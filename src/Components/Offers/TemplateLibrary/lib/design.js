@@ -44,7 +44,7 @@ export function baseDesign() {
     // onBeginDrag).
     elements: [],
     qr: { visible: true, value: 'https://yourstore.com/redeem', x: 10, y: 57, size: 17, color: null },
-    qrLabel: { visible: true, line1: 'SCAN TO', line2: 'REDEEM', x: 30, y: 64, fontSize: 4.3, color: null, font: "'Inter', sans-serif" },
+    
   }
 }
 
@@ -83,8 +83,8 @@ export function blankDesign() {
       frame: false,
     },
     elements: [],
-    qr: { visible: false, value: '', x: 10, y: 57, size: 17, color: null },
-    qrLabel: { visible: false, line1: '', line2: '', x: 30, y: 64, fontSize: 4.3, color: null, font: "'Inter', sans-serif" },
+    qr: { visible: true, value: 'https://yourstore.com/redeem', x: 10, y: 57, size: 17, color: null },
+    
   }
 }
 
@@ -102,7 +102,26 @@ export const ELEMENT_POS_KEYS = {
   qr: ['x', 'y'],
   qrLabel: ['x', 'y'],
 }
-
+// Full paint order (front = last) across BOTH named slots (qr, qrLabel)
+// and freeform elements — this is the single source of truth for
+// z-order now, replacing the old hardcoded "qr, then qrLabel, then
+// elements" order in VoucherCanvas. design.stackOrder is a flat array
+// of keys: 'qr', 'qrLabel', or an element id.
+//
+// Backward-compatible: any key not yet present in a saved
+// design.stackOrder (older templates saved before this existed, or a
+// freeform element that was just added and hasn't been dragged) falls
+// back to the legacy default order — qr, then qrLabel, then elements
+// in their array order — appended after whatever *is* already ordered.
+export function resolveStackOrder(design) {
+  const elementIds = (design.elements || []).map((el) => el.id)
+  const legacyDefault = ['qr', 'qrLabel', ...elementIds]
+  const saved = Array.isArray(design.stackOrder) ? design.stackOrder : []
+  const knownKeys = new Set(legacyDefault)
+  const kept = saved.filter((k) => knownKeys.has(k))
+  const missing = legacyDefault.filter((k) => !kept.includes(k))
+  return [...kept, ...missing]
+}
 // Mirrors GripStyleBackend.Models.MCoupon exactly — one entry per
 // property on that model, in the same order. `key` is the C# property
 // name verbatim, used both as the display label and as the token
@@ -110,7 +129,7 @@ export const ELEMENT_POS_KEYS = {
 // rename it here too and everything downstream (design JSON, panel,
 // backend substitution) stays in sync.
 export const DEPENDENCY_FIELDS = [
-  { key: 'Name', template: '{{Name}}' },
+  { key: 'Name', template: '{{CouponName}}' },
   { key: 'DiscountPercentage', template: '{{DiscountPercentage}}' },
   { key: 'DiscountAmount', template: '{{DiscountAmount}}' },
   { key: 'MinSpendAmount', template: '{{MinSpendAmount}}' },

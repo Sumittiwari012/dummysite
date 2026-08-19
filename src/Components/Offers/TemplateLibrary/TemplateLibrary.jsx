@@ -6,14 +6,14 @@ import {
   LayoutTemplate, Move, AlertTriangle, X, Eye
 } from 'lucide-react'
 
-import { baseDesign, blankDesign, ELEMENT_POS_KEYS, round1 } from './lib/design'
+
 import {
   apiGetAllTemplates, apiCreateTemplate, apiUpdateTemplate, apiDeleteTemplate,
 } from './lib/api'
 import { VoucherCanvas } from './components/VoucherCanvas'
 import { GlobalStyles } from './components/GlobalStyles'
 import { CanvasPanel } from './panels/CanvasPanel'
-
+import { baseDesign, blankDesign, ELEMENT_POS_KEYS, resolveStackOrder, round1 } from './lib/design'
 // -----------------------------------------------------------------------
 // Main studio: gallery of saved designs (Add button only, no presets) +
 // full editor for the one configurable base design. Templates now live
@@ -241,50 +241,81 @@ export default function TemplateLibrary({ selectedTemplate = null, onBack = null
   }, [onDragMove])
 
   const onBeginDrag = useCallback((key, e) => {
-    dragRef.current = { key, clientX: e.clientX, clientY: e.clientY }
-    window.addEventListener('pointermove', onDragMove)
-    window.addEventListener('pointerup', onDragEnd)
+  dragRef.current = { key, clientX: e.clientX, clientY: e.clientY }
+  window.addEventListener('pointermove', onDragMove)
+  window.addEventListener('pointerup', onDragEnd)
 
-    // Dragging brings the element to the front of the stack — bump it
-    // to the end of elements (last = topmost paint order). Fixed named
-    // slots (qr, qrLabel) aren't in `elements`, so this only ever
-    // reorders freeform canvas elements, same scope as
-    // deleteSelectedElement below.
-    setDraft((prev) => {
-      if (!prev) return prev
-      const elements = prev.elements || []
-      const idx = elements.findIndex((el) => el.id === key)
-      if (idx === -1 || idx === elements.length - 1) return prev // already on top, or a fixed slot
-      const reordered = elements.slice()
-      const [el] = reordered.splice(idx, 1)
-      reordered.push(el)
-      return { ...prev, elements: reordered }
-    })
-  }, [onDragMove, onDragEnd])
+  // Dragging brings whatever's being dragged — a named slot (qr,
+  // qrLabel) or a freeform element — to the front of the paint order.
+  // resolveStackOrder fills in the legacy default for any design saved
+  // before stackOrder existed, so this works the same for old and new
+  // templates, and now covers qr/qrLabel exactly like elements always did.
+  setDraft((prev) => {
+    if (!prev) return prev
+    const order = resolveStackOrder(prev)
+    const idx = order.indexOf(key)
+    if (idx === -1 || idx === order.length - 1) return prev // already on top
+    const reordered = order.filter((k) => k !== key)
+    reordered.push(key)
+    return { ...prev, stackOrder: reordered }
+  })
+}, [onDragMove, onDragEnd])
 
   const onResizeMove = useCallback((e) => {
-    const r = resizeRef.current
-    if (!r || !svgRef.current) return
-    const rect = svgRef.current.getBoundingClientRect()
-    if (!rect.width || !rect.height) return
-    const { w: viewW, h: viewH } = viewDimsRef.current
-    const scaleX = viewW / rect.width
-    const scaleY = viewH / rect.height
-    const dx = (e.clientX - r.clientX) * scaleX
-    const dy = (e.clientY - r.clientY) * scaleY
-    r.clientX = e.clientX
-    r.clientY = e.clientY
+  const r = resizeRef.current
+  if (!r || !svgRef.current) return
+  const rect = svgRef.current.getBoundingClientRect()
+  if (!rect.width || !rect.height) return
+  const { w: viewW, h: viewH } = viewDimsRef.current
+  const scaleX = viewW / rect.width
+  const scaleY = viewH / rect.height
+  const dx = (e.clientX - r.clientX) * scaleX
+  const dy = (e.clientY - r.clientY) * scaleY
+  r.clientX = e.clientX
+  r.clientY = e.clientY
 
+  // QR is a fixed named slot (draft.qr), not part of draft.elements,
+  // and must stay square — handle it separately before falling through
+  // to the freeform-elements lookup below.
+  if (r.key === 'qr') {
     setDraft((prev) => {
-      if (!prev) return prev
-      const next = _.cloneDeep(prev)
-      const elements = next.elements || []
-      const idx = elements.findIndex((el) => el.id === r.key)
-      if (idx === -1) return prev
-      const el = { ...elements[idx] }
-      const MIN = 4
+      if (!prev || !prev.qr) return prev
+      const MIN = 6
+      const qr = { ...prev.qr }
+      const growsRight = r.corner === 'tr' || r.corner === 'br'
+      const growsDown = r.corner === 'bl' || r.corner === 'br'
+      const signedDx = growsRight ? dx : -dx
+      const signedDy = growsDown ? dy : -dy
+      const delta = Math.abs(signedDx) > Math.abs(signedDy) ? signedDx : signedDy
 
-      if (el.type === 'text') {
+      const nextSize = Math.max(MIN, round1(qr.size + delta))
+
+      // Anchor the opposite corner: left-side corners shift x, top-side
+      // corners shift y, by however much the size actually changed.
+      if (r.corner === 'tl' || r.corner === 'bl') {
+        qr.x = round1(qr.x + (qr.size - nextSize))
+      }
+      if (r.corner === 'tl' || r.corner === 'tr') {
+        qr.y = round1(qr.y + (qr.size - nextSize))
+      }
+      qr.size = nextSize
+
+      return { ...prev, qr }
+    })
+    return
+  }
+
+  setDraft((prev) => {
+    if (!prev) return prev
+    const next = _.cloneDeep(prev)
+    const elements = next.elements || []
+    const idx = elements.findIndex((el) => el.id === r.key)
+    if (idx === -1) return prev
+    const el = { ...elements[idx] }
+    const MIN = 4
+
+    if (el.type === 'text') {
+      // ... unchanged, rest of the function stays exactly as-is
         // Text has no stored width/height — its box (see elementBounds)
         // is derived from fontSize + text length. Resizing text means
         // scaling fontSize instead, converting the horizontal drag
