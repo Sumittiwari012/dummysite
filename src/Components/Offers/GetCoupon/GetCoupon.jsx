@@ -18,8 +18,8 @@ import _ from 'lodash'
 // The actual fetch lives below, in this file, so you can repoint or
 // reshape it (headers, auth, response envelope, etc.) without touching
 // templateLibrary/api.js.
-import { VoucherCanvas } from './TemplateLibrary/components/VoucherCanvas'
-import { baseDesign } from './TemplateLibrary/lib/design'
+import { VoucherCanvas } from '../TemplateLibrary/components/VoucherCanvas'
+import { baseDesign } from '../TemplateLibrary/lib/design'
 
 // Adjust if your API is mounted elsewhere / behind a different host.
 const API_BASE = 'https://dummypossetup.runasp.net'
