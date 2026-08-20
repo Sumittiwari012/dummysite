@@ -13,12 +13,30 @@ import { resolveStackOrder, sampleForToken } from '../lib/design'
 // shapes/text/images additionally get a rotate handle above the
 // selection box.
 //
+// Interactive editing also opens up a padded "workspace" margin
+// (CANVAS_PAD svg units) around the true printable card, shown as a
+// light grey area outside a dashed boundary line. This lets a person
+// drag an element out past the edge to temporarily park it while
+// repositioning, without it vanishing. That margin only exists in the
+// interactive view — any non-interactive render (gallery thumbnails,
+// the picker preview, or a final saved-output render) clips freeform
+// elements strictly to the true card bounds, so anything left parked
+// outside the card at save time simply isn't part of what's shown
+// there. Nothing is deleted from draft.elements by leaving it out
+// there — it's purely a visual/render-time distinction.
+//
 // Dependency text elements (el.text holding a literal token like
 // "{{DiscountPercentage}}") are displayed using their short design-time
 // sample ("20%") via sampleForToken, both here and in elementBounds —
 // el.text itself is untouched, so save/load and the backend's
 // GetCouponUi token substitution keep working against the real token.
 // -----------------------------------------------------------------------
+
+// Exported so TemplateLibrary.jsx's drag/resize pointer math (which
+// converts client px to svg units via viewDimsRef) can stay in sync
+// with the actual padded viewBox size used here when interactive.
+export const CANVAS_PAD = 24
+
 function ShapeNode({ el, colors }) {
   // Shapes render with a thin black border and the interior filled in
   // el.color. Line has no interior, so it renders fully in el.color
@@ -134,6 +152,11 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
   const c = design.colors
   const layers = design.layers || {}
   const elements = design.elements || []
+
+  // Only the interactive editor gets the extra workspace margin —
+  // thumbnails/previews render at the true card size with no pad.
+  const pad = interactive ? CANVAS_PAD : 0
+  const viewBox = `${-pad} ${-pad} ${viewW + pad * 2} ${viewH + pad * 2}`
 
   const handlePointerDown = (key) => (e) => {
     if (!interactive) return
@@ -272,12 +295,12 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
             />
           )}
           <text
-  x={el.x} y={el.y}
-  fontSize={el.fontSize} fontWeight={el.fontWeight || 600} fontStyle={el.fontStyle || 'normal'}
-  fill={el.color || c.accentDark} opacity={el.opacity ?? 1} fontFamily={el.font}
->
-  {displayText}
-</text>
+            x={el.x} y={el.y}
+            fontSize={el.fontSize} fontWeight={el.fontWeight || 600} fontStyle={el.fontStyle || 'normal'}
+            fill={el.color || c.accentDark} opacity={el.opacity ?? 1} fontFamily={el.font}
+          >
+            {displayText}
+          </text>
         </g>
       )
     } else if (el.type === 'image') {
@@ -306,7 +329,7 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
   return (
     <svg
       ref={svgRef}
-      viewBox={`0 0 ${viewW} ${viewH}`}
+      viewBox={viewBox}
       width="100%"
       height="100%"
       onPointerDown={() => interactive && onSelect && onSelect(null)}
@@ -318,6 +341,15 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
         </clipPath>
       </defs>
 
+      {/* Padded workspace background — only present in interactive mode,
+          gives visual room outside the true card to park a dragged element. */}
+      {interactive && (
+        <rect x={-pad} y={-pad} width={viewW + pad * 2} height={viewH + pad * 2} fill="#EDEBF2" />
+      )}
+
+      {/* Background decorative layers (tint/dots/side panel/ribbon) always
+          stay clipped to the true card — these were never meant to bleed
+          into the workspace margin. */}
       <g clipPath={`url(#vclip-${uid})`}>
         <rect x={0} y={0} width={viewW} height={viewH} fill={c.tint} />
 
@@ -341,18 +373,37 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
             fill={layers.ribbonColor || c.accent}
           />
         )}
+      </g>
 
+      {/* Freeform elements + qr/qrLabel: unclipped while interactive so a
+          dragged element stays visible out in the workspace margin;
+          strictly clipped to the true card everywhere else (thumbnails,
+          previews, any non-interactive render), so anything left parked
+          outside the card doesn't appear there. */}
+      <g clipPath={interactive ? undefined : `url(#vclip-${uid})`}>
         {resolveStackOrder(design).map((key) => {
           if (key === 'qr') return renderQr()
           if (key === 'qrLabel') return renderQrLabel()
           const el = elements.find((item) => item.id === key)
           return el ? renderFreeformElement(el) : null
         })}
+      </g>
 
+      <g clipPath={`url(#vclip-${uid})`}>
         {layers.frame && (
           <rect x={0.5} y={0.5} width={viewW - 1} height={viewH - 1} rx={3.5} fill="none" stroke={c.accent} strokeWidth={0.6} />
         )}
       </g>
+
+      {/* Dashed guide showing exactly where the true printable card ends —
+          purely visual, non-interactive. */}
+      {interactive && (
+        <rect
+          x={0.5} y={0.5} width={viewW - 1} height={viewH - 1} rx={3.5}
+          fill="none" stroke="#9C98AC" strokeWidth={0.6} strokeDasharray="2 2" opacity={0.7}
+          style={{ pointerEvents: 'none' }}
+        />
+      )}
     </svg>
   )
 })

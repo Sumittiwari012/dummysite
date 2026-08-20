@@ -10,10 +10,10 @@ import {
 import {
   apiGetAllTemplates, apiCreateTemplate, apiUpdateTemplate, apiDeleteTemplate,
 } from './lib/api'
-import { VoucherCanvas } from './components/VoucherCanvas'
 import { GlobalStyles } from './components/GlobalStyles'
 import { CanvasPanel } from './panels/CanvasPanel'
 import { baseDesign, blankDesign, ELEMENT_POS_KEYS, resolveStackOrder, round1 } from './lib/design'
+import { VoucherCanvas, CANVAS_PAD } from './components/VoucherCanvas'
 // -----------------------------------------------------------------------
 // Main studio: gallery of saved designs (Add button only, no presets) +
 // full editor for the one configurable base design. Templates now live
@@ -63,14 +63,16 @@ export default function TemplateLibrary({ selectedTemplate = null, onBack = null
   const rotateRef = useRef(null)
   const viewDimsRef = useRef({ w: 200, h: 100 })
 
-  useEffect(() => {
-    if (!draft) return
-    viewDimsRef.current = {
-      w: 200,
-      h: 200 * (draft.heightMM / Math.max(draft.widthMM, 1)),
-    }
-  }, [draft])
-
+  
+useEffect(() => {
+  if (!draft) return
+  const trueW = 200
+  const trueH = 200 * (draft.heightMM / Math.max(draft.widthMM, 1))
+  viewDimsRef.current = {
+    w: trueW + CANVAS_PAD * 2,
+    h: trueH + CANVAS_PAD * 2,
+  }
+}, [draft])
   // Converts a raw pointer-event client position into the SVG's own
   // viewBox coordinate space (same scaleX/scaleY math as drag/resize
   // below, plus the rect's own offset since rotation needs an absolute
@@ -751,10 +753,12 @@ export default function TemplateLibrary({ selectedTemplate = null, onBack = null
 
         <div className="vs-editor-body">
           <div className="vs-canvas-pane">
-            <div
-              className="vs-canvas-frame"
-              style={{ aspectRatio: `${draft.widthMM} / ${draft.heightMM}` }}
-            >
+           <div
+  className="vs-canvas-frame"
+  style={{
+    aspectRatio: `${200 + CANVAS_PAD * 2} / ${200 * (draft.heightMM / Math.max(draft.widthMM, 1)) + CANVAS_PAD * 2}`,
+  }}
+>
               <VoucherCanvas
                 ref={svgRef}
                 design={draft}
