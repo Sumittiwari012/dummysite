@@ -3,7 +3,7 @@ import React from 'react'
 export function GlobalStyles() {
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;800&family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Playfair+Display:wght@700;800&family=IBM+Plex+Mono:wght@600;700&family=Manrope:wght@500;700&family=IBM+Plex+Sans:wght@400;600;700&family=Source+Serif+4:wght@600;700&family=Bebas+Neue&family=Anton&family=Archivo+Black&family=Poppins:wght@700;800&family=Montserrat:wght@700;800&family=Oswald:wght@600;700&family=Abril+Fatface&family=DM+Serif+Display&family=Cormorant+Garamond:wght@600;700&family=Libre+Baskerville:wght@700&family=Syne:wght@700;800&family=Sora:wght@700;800&family=Unbounded:wght@700;800&family=Outfit:wght@700;800&family=Righteous&family=Rubik+Mono+One&family=Big+Shoulders+Display:wght@700;800&family=Josefin+Sans:wght@600;700&family=Bodoni+Moda:wght@700;800&family=Zilla+Slab:wght@600;700&family=Roboto:wght@400;500;600;700&family=Open+Sans:wght@400;500;600;700&family=Lato:wght@400;700&family=Nunito:wght@400;500;600;700&family=Work+Sans:wght@400;500;600;700&family=Karla:wght@400;500;600;700&family=Mulish:wght@400;500;600;700&family=Rubik:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Barlow:wght@400;500;600;700&family=Inconsolata:wght@400;500;600;700&family=Quicksand:wght@400;500;600;700&family=Raleway:wght@400;500;600;700&family=PT+Sans:wght@400;700&family=Noto+Sans:wght@400;500;600;700&family=Hind:wght@400;500;600;700&family=Overpass:wght@400;500;600;700&family=Cabin:wght@400;500;600;700&family=Assistant:wght@400;500;600;700&family=Public+Sans:wght@400;500;600;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;800&family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Playfair+Display:wght@700;800&family=IBM+Plex+Mono:wght@600;700&family=Manrope:wght@500;700&family=IBM+Plex+Sans:wght@400;600;700&family=Source+Serif+4:wght@600;700&family=Bebas+Neue&family=Anton&family=Archivo+Black&family=Poppins:wght@700;800&family=Montserrat:wght@700;800&family=Oswald:wght@600;700&family=Abril+Fatface&family=DM+Serif+Display&family=Cormorant+Garamond:wght@600;700&family=Libre+Baskerville:wght@700&family=Syne:wght@700;800&family=Sora:wght@700;800&family=Unbounded:wght@700;800&family=Outfit:wght@700;800&family=Righteous&family=Rubik+Mono+One&family=Big+Shoulders+Display:wght@700;800&family=Josefin+Sans:wght@600;700&family=Bodoni+Moda:wght@700;800&family=Zilla+Slab:wght@600;700&family=Roboto:wght@400;500;600;700&family=Open+Sans:wght@400;500;600;700&family=Lato:wght@400;700&family=Nunito:wght@400;500;600;700&family=Work+Sans:wght@400;500;600;700&family=Karla:wght@400;500;600;700&family=Mulish:wght@400;500;600;700&family=Rubik:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Barlow:wght@400;500;600;700&family=Inconsolata:wght@400;500;600;700&family=Quicksand:wght@400;500;600;700&family=Raleway:wght@400;500;600;700&family=PT+Sans:wght@400;700&family=Noto+Sans:wght@400;500;600;700&family=Hind:wght@400;500;600;700&family=Overpass:wght@400;500;600;700&family=Cabin:wght@400;500;600;700&family=Assistant:wght@400;500;600;700&family=Public+Sans:wght@400;500;600;700&display=swap&family=Public+Sans:wght@400;500;600;700&family=Caveat:wght@600;700&family=Courier+Prime:wght@400;700&display=swap');
 
       .vs-wrap { background: #FFFFFF; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 20px -12px rgba(28,26,36,0.35); font-family: 'Inter', sans-serif; }
 
@@ -170,6 +170,57 @@ export function GlobalStyles() {
       @media (prefers-reduced-motion: reduce) {
         .vs-btn, .vs-chip, .vs-card-id, .vs-card-preview-hint { transition: none; }
       }
+      .vs-dep-controls {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+.vs-dep-control {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: #6b6b6b;
+}
+.vs-dep-control input,
+.vs-dep-control select {
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #fff;
+}
+.vs-dep-control input { width: 56px; }
+.vs-dep-control--grow { flex: 1; }
+.vs-dep-control--grow select { width: 100%; }
+
+.vs-dep-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  background: #FBF3E8;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  padding: 0 8px;
+}
+
+.vs-preset-row--compact {
+  gap: 6px;
+}
+.vs-chip--compact {
+  font-size: 11px;
+  padding: 4px 8px;
+}
+  .vs-dep-control--checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  padding-top: 14px; /* rough vertical alignment with the adjacent select's label row */
+}
+.vs-dep-control--checkbox input { width: 15px; height: 15px; accent-color: #1C1A24; margin: 0; }
     `}</style>
   )
 }

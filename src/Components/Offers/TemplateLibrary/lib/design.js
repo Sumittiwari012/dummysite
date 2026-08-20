@@ -129,12 +129,16 @@ export function resolveStackOrder(design) {
 // rename it here too and everything downstream (design JSON, panel,
 // backend substitution) stays in sync.
 export const DEPENDENCY_FIELDS = [
-  { key: 'Name', template: '{{CouponName}}' },
-  { key: 'DiscountPercentage', template: '{{DiscountPercentage}}' },
-  { key: 'DiscountAmount', template: '{{DiscountAmount}}' },
-  { key: 'MinSpendAmount', template: '{{MinSpendAmount}}' },
-  { key: 'ExpiryDate', template: '{{ExpiryDate}}' },
+  { key: 'Name', template: '{{CouponName}}', sample: 'Summer Sale' },
+  { key: 'DiscountPercentage', template: '{{DiscountPercentage}}', sample: '20%' },
+  { key: 'DiscountAmount', template: '{{DiscountAmount}}', sample: 'Rs 200' },
+  { key: 'MinSpendAmount', template: '{{MinSpendAmount}}', sample: 'Rs 500' },
+  { key: 'ExpiryDate', template: '{{ExpiryDate}}', sample: '31/12/26' },
 ]
+export function sampleForToken(text) {
+  const match = DEPENDENCY_FIELDS.find((f) => f.template === text)
+  return match ? match.sample : null
+}
 
 // draft.dependencies lives directly on the design object (see
 // baseDesign()/blankDesign() above) and is saved/loaded with the rest
@@ -185,7 +189,7 @@ export function makeId(type) {
 }
 
 export function elementSummary(el) {
-  if (el.type === 'text') return el.text?.trim() ? el.text.slice(0, 18) : 'Text'
+  if (el.type === 'text') return sampleForToken(el.text) || (el.text?.trim() ? el.text.slice(0, 18) : 'Text')
   if (el.type === 'shape') return el.shape ? el.shape[0].toUpperCase() + el.shape.slice(1) : 'Shape'
   if (el.type === 'image') return 'Image'
   if (el.type === 'qr') return 'QR code'
@@ -284,3 +288,66 @@ export const SIZE_PRESETS = [
 export function round1(n) {
   return Math.round(n * 10) / 10
 }
+// A small, deliberately diverse set for the Dependencies panel — one
+// or two representatives per *category* of letterform (geometric sans,
+// neutral sans, elegant serif, high-contrast serif, slab, condensed
+// display, heavy display, rounded, mono, typewriter, script) rather
+// than many near-identical sans options. Grouped so the panel can show
+// them under <optgroup> headings and make the differences obvious at a
+// glance instead of scrolling a flat list of lookalikes.
+export const TOKEN_FONTS = [
+  {
+    category: 'Sans',
+    fonts: [
+      { label: 'Inter', value: "'Inter', sans-serif" },
+      { label: 'Space Grotesk', value: "'Space Grotesk', sans-serif" },
+      { label: 'Josefin Sans', value: "'Josefin Sans', sans-serif" },
+    ],
+  },
+  {
+    category: 'Serif',
+    fonts: [
+      { label: 'Playfair Display', value: "'Playfair Display', serif" },
+      { label: 'Fraunces', value: "'Fraunces', serif" },
+      { label: 'Bodoni Moda', value: "'Bodoni Moda', serif" },
+    ],
+  },
+  {
+    category: 'Slab',
+    fonts: [
+      { label: 'Zilla Slab', value: "'Zilla Slab', serif" },
+    ],
+  },
+  {
+    category: 'Condensed / Display',
+    fonts: [
+      { label: 'Oswald', value: "'Oswald', sans-serif" },
+      { label: 'Bebas Neue', value: "'Bebas Neue', sans-serif" },
+      { label: 'Anton', value: "'Anton', sans-serif" },
+      { label: 'Archivo Black', value: "'Archivo Black', sans-serif" },
+    ],
+  },
+  {
+    category: 'Rounded / Decorative',
+    fonts: [
+      { label: 'Righteous', value: "'Righteous', sans-serif" },
+      { label: 'Abril Fatface', value: "'Abril Fatface', serif" },
+    ],
+  },
+  {
+    category: 'Mono / Typewriter',
+    fonts: [
+      { label: 'IBM Plex Mono', value: "'IBM Plex Mono', monospace" },
+      { label: 'Courier Prime', value: "'Courier Prime', monospace" },
+    ],
+  },
+  {
+    category: 'Script',
+    fonts: [
+      { label: 'Caveat', value: "'Caveat', cursive" },
+    ],
+  },
+]
+
+// Flat lookup used when we just need the list without categories.
+export const TOKEN_FONTS_FLAT = TOKEN_FONTS.flatMap((g) => g.fonts)

@@ -1,16 +1,23 @@
 import React from 'react'
 import { QrCells } from './QrCells'
-import { resolveStackOrder } from '../lib/design'
+import { resolveStackOrder, sampleForToken } from '../lib/design'
 // -----------------------------------------------------------------------
 // The voucher canvas. Renders the named-field design object produced by
 // baseDesign()/blankDesign() in lib/design.js — qr, qrLabel — plus a
 // few simple decorative layers (frame, side panel, dots, ribbon), and
 // finally the freeform `design.elements` array (shapes/text/images/QR
-// added via the Canvas panel), in array order (front = last item).
-// When `interactive` is true, every element — named or freeform — is
-// clickable/draggable, shapes/images/text additionally get corner
-// handles for resizing, and shapes/text/images additionally get a
-// rotate handle above the selection box.
+// added via the Canvas panel), painted in design.stackOrder (front =
+// last) via resolveStackOrder. When `interactive` is true, every
+// element — named or freeform — is clickable/draggable, shapes/
+// images/text additionally get corner handles for resizing, and
+// shapes/text/images additionally get a rotate handle above the
+// selection box.
+//
+// Dependency text elements (el.text holding a literal token like
+// "{{DiscountPercentage}}") are displayed using their short design-time
+// sample ("20%") via sampleForToken, both here and in elementBounds —
+// el.text itself is untouched, so save/load and the backend's
+// GetCouponUi token substitution keep working against the real token.
 // -----------------------------------------------------------------------
 function ShapeNode({ el, colors }) {
   // Shapes render with a thin black border and the interior filled in
@@ -89,7 +96,8 @@ function elementBounds(key, el) {
     return { x: el.x, y: el.y - el.fontSize, w: approxW, h: el.fontSize * 2.2, cx: el.x + approxW / 2, cy: el.y - el.fontSize * 0.3 }
   }
   if (el.type === 'text') {
-    const approxW = (el.text?.length || 6) * el.fontSize * 0.55
+    const displayText = sampleForToken(el.text) || el.text
+    const approxW = (displayText?.length || 6) * el.fontSize * 0.55
     const h = el.fontSize * 1.3
     return { x: el.x, y: el.y - el.fontSize, w: Math.max(approxW, el.fontSize), h, cx: el.x + approxW / 2, cy: el.y - el.fontSize * 0.3 }
   }
@@ -127,17 +135,6 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
   const layers = design.layers || {}
   const elements = design.elements || []
 
-  // Which *type* renders above which other type is controlled by
-  // design.layerOrder (front = last), independent of when an element
-  // was added — that's handled by ElementsPanel's Layers control.
-  // Within a single type, elements keep their existing relative order
-  // in `elements` (front = last of that type). Any type not present in
-  // layerOrder (e.g. an older saved design) falls back to appearing in
-  // its natural array position relative to other unknown-type elements,
-  // stacked above all known-type groups.
-  
-  
-
   const handlePointerDown = (key) => (e) => {
     if (!interactive) return
     e.stopPropagation()
@@ -164,25 +161,26 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
   const ROTATE_OFFSET = 9 // distance (svg units) above the selection box
 
   const resizeHandles = (key, el) => {
-  if (!interactive || selectedKey !== key || !isResizable(key, el)) return null
-  const b = elementBounds(key, el)
-  const corners = [
-    { corner: 'tl', cx: b.x, cy: b.y },
-    { corner: 'tr', cx: b.x + b.w, cy: b.y },
-    { corner: 'bl', cx: b.x, cy: b.y + b.h },
-    { corner: 'br', cx: b.x + b.w, cy: b.y + b.h },
-  ]
-  const cursorFor = { tl: 'nwse-resize', br: 'nwse-resize', tr: 'nesw-resize', bl: 'nesw-resize' }
-  return corners.map(({ corner, cx, cy }) => (
-    <rect
-      key={corner}
-      x={cx - HANDLE / 2} y={cy - HANDLE / 2} width={HANDLE} height={HANDLE}
-      fill="#FFFFFF" stroke="#2E7DB0" strokeWidth={0.5}
-      style={{ cursor: cursorFor[corner] }}
-      onPointerDown={handleResizePointerDown(key, corner)}
-    />
-  ))
-}
+    if (!interactive || selectedKey !== key || !isResizable(key, el)) return null
+    const b = elementBounds(key, el)
+    const corners = [
+      { corner: 'tl', cx: b.x, cy: b.y },
+      { corner: 'tr', cx: b.x + b.w, cy: b.y },
+      { corner: 'bl', cx: b.x, cy: b.y + b.h },
+      { corner: 'br', cx: b.x + b.w, cy: b.y + b.h },
+    ]
+    const cursorFor = { tl: 'nwse-resize', br: 'nwse-resize', tr: 'nesw-resize', bl: 'nesw-resize' }
+    return corners.map(({ corner, cx, cy }) => (
+      <rect
+        key={corner}
+        x={cx - HANDLE / 2} y={cy - HANDLE / 2} width={HANDLE} height={HANDLE}
+        fill="#FFFFFF" stroke="#2E7DB0" strokeWidth={0.5}
+        style={{ cursor: cursorFor[corner] }}
+        onPointerDown={handleResizePointerDown(key, corner)}
+      />
+    ))
+  }
+
   const rotateHandle = (key, el) => {
     if (!interactive || selectedKey !== key || !isRotatable(key, el)) return null
     const b = elementBounds(key, el)
@@ -252,7 +250,12 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
     if (el.type === 'shape') {
       content = <ShapeNode el={el} colors={c} />
     } else if (el.type === 'text') {
-      const approxW = (el.text?.length || 6) * el.fontSize * 0.55
+      // Dependency tokens (e.g. "{{DiscountPercentage}}") render as their
+      // short sample ("20%") instead of the literal token text — see
+      // sampleForToken in lib/design.js. Ordinary text elements are
+      // unaffected (sampleForToken returns null, falling back to el.text).
+      const displayText = sampleForToken(el.text) || el.text
+      const approxW = (displayText?.length || 6) * el.fontSize * 0.55
       const padX = el.fontSize * 0.35
       const padY = el.fontSize * 0.3
       const hasBg = el.bgColor && el.bgColor !== 'transparent'
@@ -269,12 +272,12 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
             />
           )}
           <text
-            x={el.x} y={el.y}
-            fontSize={el.fontSize} fontWeight={el.fontWeight || 600}
-            fill={el.color || c.accentDark} opacity={el.opacity ?? 1} fontFamily={el.font}
-          >
-            {el.text}
-          </text>
+  x={el.x} y={el.y}
+  fontSize={el.fontSize} fontWeight={el.fontWeight || 600} fontStyle={el.fontStyle || 'normal'}
+  fill={el.color || c.accentDark} opacity={el.opacity ?? 1} fontFamily={el.font}
+>
+  {displayText}
+</text>
         </g>
       )
     } else if (el.type === 'image') {
@@ -340,11 +343,11 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
         )}
 
         {resolveStackOrder(design).map((key) => {
-  if (key === 'qr') return renderQr()
-  if (key === 'qrLabel') return renderQrLabel()
-  const el = elements.find((item) => item.id === key)
-  return el ? renderFreeformElement(el) : null
-})}
+          if (key === 'qr') return renderQr()
+          if (key === 'qrLabel') return renderQrLabel()
+          const el = elements.find((item) => item.id === key)
+          return el ? renderFreeformElement(el) : null
+        })}
 
         {layers.frame && (
           <rect x={0.5} y={0.5} width={viewW - 1} height={viewH - 1} rx={3.5} fill="none" stroke={c.accent} strokeWidth={0.6} />
