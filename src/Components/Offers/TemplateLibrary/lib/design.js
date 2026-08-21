@@ -42,8 +42,16 @@ export function baseDesign() {
     // No separate per-type ordering; dragging an element on the canvas
     // moves it to the end of this array (see TemplateLibrary's
     // onBeginDrag).
-    elements: [],
+           elements: [],
+        // All three code types share one encoded value (qr.value) — a
+    // dependency token dropped in once drives QR, barcode, and text
+    // together — but each has its own independent position/size so it
+    // can be dragged and resized on its own, same as QR.
     qr: { visible: true, value: 'https://yourstore.com/redeem', x: 10, y: 57, size: 17, color: null },
+    barcode: { visible: true, x: 10, y: 40, width: 60, height: 15, color: null, rotation: 0 },
+    qrText: { visible: true, x: 10, y: 80, fontSize: 6, color: null },
+    codeTypes: { qrCode: true, barcode: false, text: false }
+    
     
   }
 }
@@ -82,8 +90,15 @@ export function blankDesign() {
       ribbonColor: null,
       frame: false,
     },
-    elements: [],
+        elements: [],
+        // All three code types share one encoded value (qr.value) — a
+    // dependency token dropped in once drives QR, barcode, and text
+    // together — but each has its own independent position/size so it
+    // can be dragged and resized on its own, same as QR.
     qr: { visible: true, value: 'https://yourstore.com/redeem', x: 10, y: 57, size: 17, color: null },
+    barcode: { visible: true, x: 10, y: 40, width: 60, height: 15, color: null, rotation: 0 },
+    qrText: { visible: true, x: 10, y: 80, fontSize: 6, color: null },
+    codeTypes: { qrCode: true, barcode: false, text: false }
     
   }
 }
@@ -100,7 +115,8 @@ export function blankDesign() {
 
 export const ELEMENT_POS_KEYS = {
   qr: ['x', 'y'],
-  qrLabel: ['x', 'y'],
+  barcode: ['x', 'y'],
+  qrText: ['x', 'y'],
 }
 // Full paint order (front = last) across BOTH named slots (qr, qrLabel)
 // and freeform elements — this is the single source of truth for
@@ -115,7 +131,7 @@ export const ELEMENT_POS_KEYS = {
 // in their array order — appended after whatever *is* already ordered.
 export function resolveStackOrder(design) {
   const elementIds = (design.elements || []).map((el) => el.id)
-  const legacyDefault = ['qr', 'qrLabel', ...elementIds]
+  const legacyDefault = ['qr', ...elementIds]
   const saved = Array.isArray(design.stackOrder) ? design.stackOrder : []
   const knownKeys = new Set(legacyDefault)
   const kept = saved.filter((k) => knownKeys.has(k))
@@ -168,8 +184,7 @@ export const DEPENDENCY_TARGET_FIELDS = {
 }
 
 export const ELEMENT_LABELS = {
-  qr: 'QR code',
-  qrLabel: 'QR caption',
+  qr: 'QR code'
 }
 
 // Labels for elements placed in the freeform `elements` array (used by

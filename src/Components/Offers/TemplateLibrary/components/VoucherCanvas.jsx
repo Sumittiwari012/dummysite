@@ -1,6 +1,7 @@
 import React from 'react'
 import { QrCells } from './QrCells'
 import { resolveStackOrder, sampleForToken } from '../lib/design'
+import { BarcodeCells } from './BarcodeCells'
 // -----------------------------------------------------------------------
 // The voucher canvas. Renders the named-field design object produced by
 // baseDesign()/blankDesign() in lib/design.js — qr, qrLabel — plus a
@@ -104,14 +105,28 @@ function ShapeNode({ el, colors }) {
       return null
   }
 }
-
+function isResizable(key, el) {
+  if (key === 'qr' || key === 'barcode' || key === 'qrText') return true
+  return (el.type === 'shape' && el.shape !== 'line') || el.type === 'image' || el.type === 'text'
+}
+function isRotatable(key, el) {
+  return key === 'qr' || key === 'barcode' || key === 'qrText'
+    || el.type === 'shape' || el.type === 'text' || el.type === 'image'
+}
 function elementBounds(key, el) {
   if (key === 'qr' || el.type === 'qr') {
     return { x: el.x, y: el.y, w: el.size, h: el.size, cx: el.x + el.size / 2, cy: el.y + el.size / 2 }
   }
-  if (key === 'qrLabel') {
-    const approxW = Math.max((el.line1?.length || 0), (el.line2?.length || 0)) * el.fontSize * 0.6
-    return { x: el.x, y: el.y - el.fontSize, w: approxW, h: el.fontSize * 2.2, cx: el.x + approxW / 2, cy: el.y - el.fontSize * 0.3 }
+  if (key === 'barcode') {
+    return { x: el.x, y: el.y, w: el.width, h: el.height, cx: el.x + el.width / 2, cy: el.y + el.height / 2 }
+  }
+  if (key === 'qrText') {
+    const value = el.text || ''
+    const textLen = Math.max(value.length || 6, 1)
+    const charW = textLen * 0.55
+    const w = charW * el.fontSize
+    const h = el.fontSize * 1.3
+    return { x: el.x, y: el.y - el.fontSize, w, h, cx: el.x + w / 2, cy: el.y - el.fontSize * 0.3 }
   }
   if (el.type === 'text') {
     const displayText = sampleForToken(el.text) || el.text
@@ -124,23 +139,17 @@ function elementBounds(key, el) {
   }
   return { x: el.x || 0, y: el.y || 0, w: 0, h: 0, cx: el.x || 0, cy: el.y || 0 }
 }
-
 // Shapes, images, and freeform text can all be resized via corner
 // handles. For text, resizing scales fontSize (see the resize handler
 // wherever onBeginResize is implemented) rather than a stored
 // width/height box, since elementBounds derives text's box from
 // fontSize + text length.
-function isResizable(key, el) {
-  if (key === 'qr') return true
-  return (el.type === 'shape' && el.shape !== 'line') || el.type === 'image' || el.type === 'text'
-}
+
 
 // Freeform shape/text/image elements expose a `rotation` field
 // (see ElementFields.jsx's SizeAndRotation) — named slots (qr,
 // qrLabel) don't rotate.
-function isRotatable(key, el) {
-  return el.type === 'shape' || el.type === 'text' || el.type === 'image'
-}
+
 
 export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
   { design, interactive = false, selectedKey = null, onSelect, onBeginDrag, onBeginResize, onBeginRotate },
@@ -237,32 +246,65 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
     )
   }
 
-  const wrap = (key, el, content) => {
-    if (!content) return null
-    return (
-      <g key={key} onPointerDown={handlePointerDown(key)} style={{ cursor: interactive ? 'grab' : 'default' }}>
-        {content}
-        {selRing(key, el)}
-      </g>
-    )
-  }
+  const wrap = (key, el, content, transform) => {
+  if (!content) return null
+  return (
+    <g key={key} transform={transform} onPointerDown={handlePointerDown(key)} style={{ cursor: interactive ? 'grab' : 'default' }}>
+      {content}
+      {selRing(key, el)}
+    </g>
+  )
+}
 
-  const renderQr = () => {
-    const el = design.qr
-    if (!el || !el.visible || !el.value) return null
-    return wrap('qr', el, <QrCells value={el.value} x={el.x} y={el.y} size={el.size} color={el.color || c.accentDark} />)
-  }
+    const renderQr = () => {
+  const el = design.qr
+  const codeTypes = design.codeTypes || { qrCode: true, barcode: false, text: false }
+  if (!codeTypes.qrCode) return null
+  if (!el || !el.visible || !el.value) return null
+  const rotation = el.rotation
+    ? `rotate(${el.rotation} ${el.x + el.size / 2} ${el.y + el.size / 2})`
+    : undefined
+  return wrap('qr', el,
+    <QrCells value={el.value} x={el.x} y={el.y} size={el.size} color={el.color || '#000000'} />,
+    rotation
+  )
+}
 
-  const renderQrLabel = () => {
-    const el = design.qrLabel
-    if (!el || !el.visible) return null
-    return wrap('qrLabel', el,
-      <g fill={el.color || c.accentDark} fontFamily={el.font} fontSize={el.fontSize} fontWeight={600}>
-        <text x={el.x} y={el.y}>{el.line1}</text>
-        <text x={el.x} y={el.y + el.fontSize * 1.2}>{el.line2}</text>
-      </g>
-    )
-  }
+      const renderBarcode = () => {
+  const codeTypes = design.codeTypes || { qrCode: true, barcode: false, text: false }
+  if (!codeTypes.barcode) return null
+  const el = design.barcode
+  const value = design.qr?.value
+  if (!el || !el.visible || !value) return null
+  const rotation = el.rotation
+    ? `rotate(${el.rotation} ${el.x + el.width / 2} ${el.y + el.height / 2})`
+    : undefined
+  return wrap('barcode', el,
+    <BarcodeCells value={value} x={el.x} y={el.y} width={el.width} height={el.height} color={el.color || '#000000'} />,
+    rotation
+  )
+}
+
+  const renderCodeText = () => {
+  const codeTypes = design.codeTypes || { qrCode: true, barcode: false, text: false }
+  if (!codeTypes.text) return null
+  const el = design.qrText
+  const value = design.qr?.value
+  if (!el || !el.visible || !value) return null
+  const rotation = el.rotation ? `rotate(${el.rotation} ${el.x} ${el.y})` : undefined
+  return wrap('qrText', { ...el, text: value },
+    <text
+      x={el.x} y={el.y}
+      fontSize={el.fontSize}
+      fontFamily="'Inter', sans-serif"
+      fill={el.color || c.accentDark}
+    >
+      {value}
+    </text>,
+    rotation
+  )
+}
+ 
 
   // Freeform elements added via the Canvas panel (Shapes/Text/Image/QR).
   const renderFreeformElement = (el) => {
@@ -313,8 +355,8 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
         />
       )
     } else if (el.type === 'qr') {
-      content = <QrCells value={el.value} x={el.x} y={el.y} size={el.size} color={el.color || c.accentDark} />
-    }
+  content = <QrCells value={el.value} x={el.x} y={el.y} size={el.size} color={el.color || '#000000'} />
+}
 
     if (!content) return null
 
@@ -380,20 +422,19 @@ export const VoucherCanvas = React.forwardRef(function VoucherCanvas(
           strictly clipped to the true card everywhere else (thumbnails,
           previews, any non-interactive render), so anything left parked
           outside the card doesn't appear there. */}
-      <g clipPath={interactive ? undefined : `url(#vclip-${uid})`}>
-        {resolveStackOrder(design).map((key) => {
-          if (key === 'qr') return renderQr()
-          if (key === 'qrLabel') return renderQrLabel()
-          const el = elements.find((item) => item.id === key)
-          return el ? renderFreeformElement(el) : null
-        })}
-      </g>
-
-      <g clipPath={`url(#vclip-${uid})`}>
-        {layers.frame && (
-          <rect x={0.5} y={0.5} width={viewW - 1} height={viewH - 1} rx={3.5} fill="none" stroke={c.accent} strokeWidth={0.6} />
-        )}
-      </g>
+           <g clipPath={interactive ? undefined : `url(#vclip-${uid})`}>
+    {resolveStackOrder(design).map((key) => {
+        if (key === 'qr') return (
+      <React.Fragment key="qr-group">
+        {renderQr()}
+        {renderBarcode()}
+        {renderCodeText()}
+      </React.Fragment>
+    )
+    const el = elements.find((item) => item.id === key)
+    return el ? renderFreeformElement(el) : null
+  })}
+</g>
 
       {/* Dashed guide showing exactly where the true printable card ends —
           purely visual, non-interactive. */}

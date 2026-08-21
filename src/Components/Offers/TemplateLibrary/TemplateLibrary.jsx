@@ -46,7 +46,7 @@ export default function TemplateLibrary({ selectedTemplate = null, onBack = null
   const [loadState, setLoadState] = useState('loading') // loading | ready | error
   const [loadError, setLoadError] = useState(null)
   const [deleteError, setDeleteError] = useState(null)
-
+const [draggingKey, setDraggingKey] = useState(null)
   const [draft, setDraft] = useState(null)
   const [draftId, setDraftId] = useState(null) // null until the draft has been saved to the backend
   const [selected, setSelected] = useState(null)
@@ -237,31 +237,45 @@ useEffect(() => {
   }, [])
 
   const onDragEnd = useCallback(() => {
-    dragRef.current = null
-    window.removeEventListener('pointermove', onDragMove)
-    window.removeEventListener('pointerup', onDragEnd)
-  }, [onDragMove])
+  dragRef.current = null
+  window.removeEventListener('pointermove', onDragMove)
+  window.removeEventListener('pointerup', onDragEnd)
+  // Dragging is purely a reposition — it never changes stacking order,
+  // in either direction. Z-order is only ever changed deliberately via
+  // bringToFront/sendToBack below.
+}, [onDragMove])
 
-  const onBeginDrag = useCallback((key, e) => {
+const onBeginDrag = useCallback((key, e) => {
   dragRef.current = { key, clientX: e.clientX, clientY: e.clientY }
   window.addEventListener('pointermove', onDragMove)
   window.addEventListener('pointerup', onDragEnd)
-
-  // Dragging brings whatever's being dragged — a named slot (qr,
-  // qrLabel) or a freeform element — to the front of the paint order.
-  // resolveStackOrder fills in the legacy default for any design saved
-  // before stackOrder existed, so this works the same for old and new
-  // templates, and now covers qr/qrLabel exactly like elements always did.
+}, [onDragMove, onDragEnd])
+// Explicit, deliberate stacking control — the only way z-order changes
+// now. Works for both named slots (qr, qrLabel) and freeform elements,
+// since resolveStackOrder already covers both uniformly.
+const bringToFront = useCallback((key) => {
   setDraft((prev) => {
     if (!prev) return prev
     const order = resolveStackOrder(prev)
     const idx = order.indexOf(key)
-    if (idx === -1 || idx === order.length - 1) return prev // already on top
+    if (idx === -1 || idx === order.length - 1) return prev
     const reordered = order.filter((k) => k !== key)
     reordered.push(key)
     return { ...prev, stackOrder: reordered }
   })
-}, [onDragMove, onDragEnd])
+}, [])
+
+const sendToBack = useCallback((key) => {
+  setDraft((prev) => {
+    if (!prev) return prev
+    const order = resolveStackOrder(prev)
+    const idx = order.indexOf(key)
+    if (idx <= 0) return prev
+    const reordered = order.filter((k) => k !== key)
+    reordered.unshift(key)
+    return { ...prev, stackOrder: reordered }
+  })
+}, [])
 
   const onResizeMove = useCallback((e) => {
   const r = resizeRef.current
@@ -306,7 +320,69 @@ useEffect(() => {
     })
     return
   }
+if (r.key === 'barcode') {
+    setDraft((prev) => {
+      if (!prev || !prev.barcode) return prev
+      const MIN = 6
+      const b = { ...prev.barcode }
+      if (r.corner === 'br') {
+        b.width = round1(Math.max(MIN, b.width + dx))
+        b.height = round1(Math.max(MIN, b.height + dy))
+      } else if (r.corner === 'bl') {
+        const newWidth = Math.max(MIN, b.width - dx)
+        b.x = round1(b.x + (b.width - newWidth))
+        b.width = round1(newWidth)
+        b.height = round1(Math.max(MIN, b.height + dy))
+      } else if (r.corner === 'tr') {
+        b.width = round1(Math.max(MIN, b.width + dx))
+        const newHeight = Math.max(MIN, b.height - dy)
+        b.y = round1(b.y + (b.height - newHeight))
+        b.height = round1(newHeight)
+      } else if (r.corner === 'tl') {
+        const newWidth = Math.max(MIN, b.width - dx)
+        const newHeight = Math.max(MIN, b.height - dy)
+        b.x = round1(b.x + (b.width - newWidth))
+        b.y = round1(b.y + (b.height - newHeight))
+        b.width = round1(newWidth)
+        b.height = round1(newHeight)
+      }
+      return { ...prev, barcode: b }
+    })
+    return
+  }
 
+  // qrText is also a fixed named slot — same fontSize-scaling
+  // approach as freeform text (see elementBounds/the text branch
+  // below), keyed off draft.qr.value's length since that's what it
+  // actually displays.
+  if (r.key === 'qrText') {
+    setDraft((prev) => {
+      if (!prev || !prev.qrText) return prev
+      const MIN_FONT = 3
+      const value = prev.qr?.value || ''
+      const textLen = Math.max(value.length || 6, 1)
+      const charW = textLen * 0.55
+      const t = { ...prev.qrText }
+      const approxWOld = charW * t.fontSize
+      let approxWNew = approxWOld
+      if (r.corner === 'br' || r.corner === 'tr') approxWNew = approxWOld + dx
+      else if (r.corner === 'bl' || r.corner === 'tl') approxWNew = approxWOld - dx
+      approxWNew = Math.max(MIN_FONT * charW, approxWNew)
+      const newFontSize = Math.max(MIN_FONT, round1(approxWNew / charW))
+      const approxWFinal = charW * newFontSize
+      if (r.corner === 'bl' || r.corner === 'tl') {
+        t.x = round1(t.x + (approxWOld - approxWFinal))
+      }
+      if (r.corner === 'br' || r.corner === 'bl') {
+        t.y = round1(t.y + (newFontSize - t.fontSize))
+      }
+      t.fontSize = newFontSize
+      return { ...prev, qrText: t }
+    })
+    return
+  }
+
+  
   setDraft((prev) => {
     if (!prev) return prev
     const next = _.cloneDeep(prev)
@@ -397,26 +473,48 @@ useEffect(() => {
   // the shape to a new angle — it just continues turning from wherever
   // it already was.
   const onRotateMove = useCallback((e) => {
-    const r = rotateRef.current
-    if (!r || !svgRef.current) return
-    const p = clientToSvgPoint(e.clientX, e.clientY)
-    const angleNow = Math.atan2(p.y - r.originY, p.x - r.originX) * (180 / Math.PI)
-    let rotation = r.startRotation + (angleNow - r.startAngle)
-    rotation = ((rotation % 360) + 360) % 360
-    rotation = Math.round(rotation * 10) / 10
+  const r = rotateRef.current
+  if (!r || !svgRef.current) return
+  const p = clientToSvgPoint(e.clientX, e.clientY)
+  const angleNow = Math.atan2(p.y - r.originY, p.x - r.originX) * (180 / Math.PI)
+  let rotation = r.startRotation + (angleNow - r.startAngle)
+  rotation = ((rotation % 360) + 360) % 360
+  rotation = Math.round(rotation * 10) / 10
 
-    setDraft((prev) => {
-      if (!prev) return prev
-      const next = _.cloneDeep(prev)
-      const elements = next.elements || []
-      const idx = elements.findIndex((el) => el.id === r.key)
-      if (idx === -1) return prev
-      elements[idx] = { ...elements[idx], rotation }
-      next.elements = elements
-      return next
-    })
-  }, [clientToSvgPoint])
+  setDraft((prev) => {
+  if (!prev) return prev
+  const next = _.cloneDeep(prev)
 
+  if (r.key === 'qr') {
+    if (!next.qr) return prev
+    next.qr = { ...next.qr, rotation }
+    return next
+  }
+  if (r.key === 'barcode') {
+    if (!next.barcode) return prev
+    next.barcode = { ...next.barcode, rotation }
+    return next
+  }
+  if (r.key === 'qrText') {
+    if (!next.qrText) return prev
+    next.qrText = { ...next.qrText, rotation }
+    return next
+  }
+
+  const elements = next.elements || []
+  const idx = elements.findIndex((el) => el.id === r.key)
+  if (idx === -1) return prev
+  elements[idx] = { ...elements[idx], rotation }
+  next.elements = elements
+  return next
+})
+}, [clientToSvgPoint])
+function getRotatableEl(draft, key) {
+  if (key === 'qr') return draft?.qr
+  if (key === 'barcode') return draft?.barcode
+  if (key === 'qrText') return draft?.qrText
+  return (draft?.elements || []).find((item) => item.id === key)
+}
   const onRotateEnd = useCallback(() => {
     rotateRef.current = null
     window.removeEventListener('pointermove', onRotateMove)
@@ -424,22 +522,32 @@ useEffect(() => {
   }, [onRotateMove])
 
   const onBeginRotate = useCallback((key, e) => {
-    const elements = draft?.elements || []
-    const el = elements.find((item) => item.id === key)
-    if (!el || !svgRef.current) return
-    const originX = el.x + (el.width || 0) / 2
-    const originY = el.y + (el.height || 0) / 2
-    const p = clientToSvgPoint(e.clientX, e.clientY)
-    rotateRef.current = {
-      key,
-      originX,
-      originY,
-      startAngle: Math.atan2(p.y - originY, p.x - originX) * (180 / Math.PI),
-      startRotation: el.rotation || 0,
-    }
-    window.addEventListener('pointermove', onRotateMove)
-    window.addEventListener('pointerup', onRotateEnd)
-  }, [draft, clientToSvgPoint, onRotateMove, onRotateEnd])
+  const el = getRotatableEl(draft, key)
+  if (!el || !svgRef.current) return
+
+  let originX, originY
+  if (key === 'qr') {
+    originX = el.x + el.size / 2
+    originY = el.y + el.size / 2
+  } else if (key === 'qrText') {
+    originX = el.x
+    originY = el.y
+  } else {
+    originX = el.x + (el.width || 0) / 2
+    originY = el.y + (el.height || 0) / 2
+  }
+
+  const p = clientToSvgPoint(e.clientX, e.clientY)
+  rotateRef.current = {
+    key,
+    originX,
+    originY,
+    startAngle: Math.atan2(p.y - originY, p.x - originX) * (180 / Math.PI),
+    startRotation: el.rotation || 0,
+  }
+  window.addEventListener('pointermove', onRotateMove)
+  window.addEventListener('pointerup', onRotateEnd)
+}, [draft, clientToSvgPoint, onRotateMove, onRotateEnd])
 
   useEffect(() => () => {
     window.removeEventListener('pointermove', onDragMove)
@@ -760,15 +868,16 @@ useEffect(() => {
   }}
 >
               <VoucherCanvas
-                ref={svgRef}
-                design={draft}
-                interactive
-                selectedKey={selected}
-                onSelect={setSelected}
-                onBeginDrag={onBeginDrag}
-                onBeginResize={onBeginResize}
-                onBeginRotate={onBeginRotate}
-              />
+  ref={svgRef}
+  design={draft}
+  interactive
+  selectedKey={selected}
+  draggingKey={draggingKey}
+  onSelect={setSelected}
+  onBeginDrag={onBeginDrag}
+  onBeginResize={onBeginResize}
+  onBeginRotate={onBeginRotate}
+/>
             </div>
             <p className="vs-canvas-hint">
               <Move size={13} strokeWidth={2.25} />
@@ -778,7 +887,15 @@ useEffect(() => {
 
           <div className="vs-panel">
             <div className="vs-panel-body">
-              <CanvasPanel draft={draft} updateDraft={updateDraft} onAddElement={setSelected} selected={selected} />
+              <CanvasPanel
+  draft={draft}
+  updateDraft={updateDraft}
+  onAddElement={setSelected}
+  selected={selected}
+  onSelect={setSelected}
+  onBringToFront={bringToFront}
+  onSendToBack={sendToBack}
+/>
             </div>
           </div>
         </div>

@@ -17,7 +17,7 @@ export function QrCells({ value, x, y, size, color, quietZone = 1.5 }) {
     return () => { cancelled = true }
   }, [value])
 
-  if (!qr) return <rect x={x} y={y} width={size} height={size} fill="#FFFFFF" />
+  if (!qr) return null
 
   const n = qr.modules.size
   const data = qr.modules.data
@@ -40,12 +40,7 @@ export function QrCells({ value, x, y, size, color, quietZone = 1.5 }) {
       }
     }
   }
-  return (
-    <g>
-      <rect x={x} y={y} width={size} height={size} fill="#FFFFFF" />
-      {cells}
-    </g>
-  )
+  return <g>{cells}</g>
 }
 
 export default QrCells

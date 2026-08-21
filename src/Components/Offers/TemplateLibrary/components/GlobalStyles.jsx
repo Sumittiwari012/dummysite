@@ -221,6 +221,14 @@ export function GlobalStyles() {
   padding-top: 14px; /* rough vertical alignment with the adjacent select's label row */
 }
 .vs-dep-control--checkbox input { width: 15px; height: 15px; accent-color: #1C1A24; margin: 0; }
+.vs-layer-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vs-layer-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.vs-layer-btn {
+  width: 24px; height: 24px; border-radius: 6px; border: none;
+  background: #F7F6FA; color: #6B6680; display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.vs-layer-btn:hover { background: #EDEBF2; color: #1C1A24; }
     `}</style>
   )
 }
