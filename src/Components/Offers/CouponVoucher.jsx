@@ -7,9 +7,11 @@ import {
   Pencil,
   Trash2,
   UserPlus,
+  ListChecks,
 } from 'lucide-react'
 import AddCoupon from './AddCoupon'
 import GetCoupon from './GetCoupon/GetCoupon'
+import CheckCoupon from './CheckCoupon/CheckCoupon'
 
 // Wire each handler up to your real coupon actions (modal, API call, route, etc).
 const ACTIONS = [
@@ -29,7 +31,14 @@ const ACTIONS = [
     base: '#2F7E72',
     deep: '#215C54',
   },
-  
+  {
+    key: 'check',
+    label: 'Check Coupon',
+    sub: 'See created coupons',
+    icon: ListChecks,
+    base: '#7A5FBF',
+    deep: '#5A4390',
+  },
   {
     key: 'assign',
     label: 'Assign Coupon',
@@ -44,17 +53,19 @@ const VIEW_TITLES = {
   menu: 'Manage coupons',
   add: 'Add a new coupon',
   get: 'Available coupons',
+  check: 'Created coupons',
 }
 
 const VIEW_BACK_LABELS = {
   menu: 'Offers',
   add: 'Coupon Voucher',
   get: 'Coupon Voucher',
+  check: 'Coupon Voucher',
 }
 
 function CouponVoucher() {
   const navigate = useNavigate()
-  const [view, setView] = useState('menu') // 'menu' | 'add' | 'get' — no route change involved
+  const [view, setView] = useState('menu') // 'menu' | 'add' | 'get' | 'check' — no route change involved
 
   useEffect(() => {
     const id = 'offers-font-link'
@@ -69,7 +80,7 @@ function CouponVoucher() {
   }, [])
 
   const handleAction = (key) => {
-    if (key === 'add' || key === 'get') {
+    if (key === 'add' || key === 'get' || key === 'check') {
       setView(key)
       return
     }
@@ -99,7 +110,7 @@ function CouponVoucher() {
         boxSizing: 'border-box',
       }}
     >
-      <div style={{ maxWidth: 640, margin: '0 auto' }}>
+      <div className={`cv-container${view === 'check' ? ' cv-container--wide' : ''}`}>
         <button type="button" onClick={handleBack} className="cv-back">
           <ArrowLeft size={18} strokeWidth={2.25} />
           {VIEW_BACK_LABELS[view]}
@@ -136,6 +147,8 @@ function CouponVoucher() {
 
         {view === 'get' && <GetCoupon onCancel={() => setView('menu')} />}
 
+        {view === 'check' && <CheckCoupon onCancel={() => setView('menu')} />}
+
         {view === 'menu' && (
           <div className="cv-action-grid">
             {ACTIONS.map(({ key, label, sub, icon: Icon, base, deep }) => (
@@ -168,6 +181,16 @@ function CouponVoucher() {
       </div>
 
       <style>{`
+        .cv-container {
+          max-width: 640px;
+          margin: 0 auto;
+          width: 100%;
+        }
+
+        .cv-container--wide {
+          max-width: 100%;
+        }
+
         .cv-back {
           display: inline-flex;
           align-items: center;

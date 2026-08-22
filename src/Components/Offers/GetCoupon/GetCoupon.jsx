@@ -8,6 +8,7 @@ import {
   Pencil,
   Trash2,
   CopyPlus,
+  PlusCircle,
   X,
   Loader2,
 } from 'lucide-react'
@@ -207,6 +208,15 @@ function GetCoupon({ onCancel }) {
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState(null)
 
+  // Add Physical Coupon: CouponId is auto-filled from the row the person
+  // clicked (read-only), couponCount and couponUniqueCode are inputs.
+  // couponUniqueCode is optional — leaving it blank lets the backend
+  // generate one.
+  const [physicalCoupon, setPhysicalCoupon] = useState(null)
+  const [physicalForm, setPhysicalForm] = useState(null) // { couponCount, couponUniqueCode }
+  const [physicalSaving, setPhysicalSaving] = useState(false)
+  const [physicalError, setPhysicalError] = useState(null)
+
   const setBusy = (id, action) =>
     setRowBusy((cur) => ({ ...cur, [id]: action }))
   const clearBusy = (id) =>
@@ -271,11 +281,14 @@ function GetCoupon({ onCancel }) {
   const closePreview = () => setPreviewCoupon(null)
 
   // --- Delete ------------------------------------------------------------
+  // Backend route is `[HttpDelete("DeleteCoupon")]` with `id` bound from
+  // the query string (no `{id}` route token), so it must be sent as
+  // `?id=...` rather than as a path segment.
   const handleDelete = async (coupon) => {
     if (!window.confirm(`Delete "${coupon.name}"? This can't be undone.`)) return
     setBusy(coupon.id, 'delete')
     try {
-      const res = await fetch(`${API_BASE}/api/Coupon/DeleteCoupon/${coupon.id}`, {
+      const res = await fetch(`${API_BASE}/api/Coupon/DeleteCoupon?id=${coupon.id}`, {
         method: 'DELETE',
       })
       if (!res.ok) throw new Error(`Delete failed (${res.status}).`)
@@ -304,6 +317,66 @@ function GetCoupon({ onCancel }) {
       showBanner('error', err.message || 'Could not add a copy of this coupon.')
     } finally {
       clearBusy(coupon.id)
+    }
+  }
+
+  // --- Add Physical Coupon -------------------------------------------------
+  const openAddPhysical = (coupon) => {
+    setPhysicalCoupon(coupon)
+    setPhysicalForm({ couponCount: 1, couponUniqueCode: '' })
+    setPhysicalError(null)
+  }
+  const closeAddPhysical = () => {
+    if (physicalSaving) return
+    setPhysicalCoupon(null)
+    setPhysicalForm(null)
+    setPhysicalError(null)
+  }
+
+  const updatePhysicalField = (field, value) =>
+    setPhysicalForm((cur) => ({ ...cur, [field]: value }))
+
+  const handleAddPhysicalSave = async (e) => {
+    e.preventDefault()
+    if (!physicalCoupon || !physicalForm) return
+
+    const count = Number(physicalForm.couponCount)
+    if (!Number.isFinite(count) || count < 1) {
+      setPhysicalError('Enter a number of coupons that is at least 1.')
+      return
+    }
+
+    setPhysicalSaving(true)
+    setPhysicalError(null)
+    try {
+      // Backend binds these as plain query-string params, not a JSON body.
+      const params = new URLSearchParams({
+        CouponId: String(physicalCoupon.id),
+        couponCount: String(count),
+      })
+      const code = physicalForm.couponUniqueCode.trim()
+      if (code) params.set('CouponUniqueCode', code)
+
+      const res = await fetch(`${API_BASE}/api/CouponAssignment/AddPhysicalCoupon?${params.toString()}`, {
+        method: 'POST',
+      })
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        throw new Error(text || `Could not add physical coupons (${res.status}).`)
+      }
+
+      showBanner(
+        'success',
+        `Added ${count} physical coupon${count === 1 ? '' : 's'} for "${physicalCoupon.name}".`
+      )
+      setPhysicalSaving(false)
+      setPhysicalCoupon(null)
+      setPhysicalForm(null)
+      return
+    } catch (err) {
+      setPhysicalError(err.message || 'Could not add physical coupons.')
+      setPhysicalSaving(false)
     }
   }
 
@@ -349,8 +422,9 @@ function GetCoupon({ onCancel }) {
         templateId: Number(editForm.templateId),
       }
 
+      // Backend route is `[HttpPost("UpdateCoupon")]`, not PUT.
       const res = await fetch(`${API_BASE}/api/Coupon/UpdateCoupon`, {
-        method: 'PUT',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
@@ -523,6 +597,15 @@ function GetCoupon({ onCancel }) {
                   </button>
                   <button
                     type="button"
+                    className="gc-card__action"
+                    onClick={() => openAddPhysical(coupon)}
+                    aria-label={`Add physical coupons for ${coupon.name}`}
+                    title="Add physical coupons"
+                  >
+                    <PlusCircle size={16} strokeWidth={2.25} />
+                  </button>
+                  <button
+                    type="button"
                     className="gc-card__action gc-card__action--danger"
                     onClick={() => handleDelete(coupon)}
                     disabled={busyAction === 'delete'}
@@ -566,8 +649,6 @@ function GetCoupon({ onCancel }) {
                 </div>
               )
             })()}
-
-            
           </div>
         </div>
       )}
@@ -711,6 +792,89 @@ function GetCoupon({ onCancel }) {
                   </>
                 ) : (
                   'Save changes'
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {physicalCoupon && physicalForm && (
+        <div className="gc-overlay" onClick={closeAddPhysical}>
+          <form
+            className="gc-modal"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={handleAddPhysicalSave}
+          >
+            <div className="gc-modal__head">
+              <h3>Add physical coupons</h3>
+              <button
+                type="button"
+                className="gc-modal__close"
+                onClick={closeAddPhysical}
+                disabled={physicalSaving}
+                aria-label="Close add physical coupons form"
+              >
+                <X size={18} strokeWidth={2.25} />
+              </button>
+            </div>
+
+            {physicalError && <div className="gc-form-error">{physicalError}</div>}
+
+            <div className="gc-field">
+              <label htmlFor="gc-physical-coupon-id">Coupon</label>
+              <input
+                id="gc-physical-coupon-id"
+                type="text"
+                value={`${physicalCoupon.name} (#${physicalCoupon.id})`}
+                readOnly
+                disabled
+              />
+            </div>
+
+            <div className="gc-field-row">
+              <div className="gc-field">
+                <label htmlFor="gc-physical-count">No. of coupons</label>
+                <input
+                  id="gc-physical-count"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={physicalForm.couponCount}
+                  onChange={(e) => updatePhysicalField('couponCount', e.target.value)}
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="gc-field">
+                <label htmlFor="gc-physical-code">Coupon code</label>
+                <input
+                  id="gc-physical-code"
+                  type="text"
+                  value={physicalForm.couponUniqueCode}
+                  onChange={(e) => updatePhysicalField('couponUniqueCode', e.target.value)}
+                  placeholder="Leave blank to auto-generate"
+                />
+              </div>
+            </div>
+
+            <div className="gc-modal__foot">
+              <button
+                type="button"
+                className="gc-btn gc-btn--ghost"
+                onClick={closeAddPhysical}
+                disabled={physicalSaving}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="gc-btn gc-btn--primary" disabled={physicalSaving}>
+                {physicalSaving ? (
+                  <>
+                    <Loader2 size={15} strokeWidth={2.5} className="gc-spin" />
+                    Adding…
+                  </>
+                ) : (
+                  'Add coupons'
                 )}
               </button>
             </div>
