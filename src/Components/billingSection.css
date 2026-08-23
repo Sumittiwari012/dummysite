@@ -43,6 +43,7 @@
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 15px;
+  flex-shrink: 0;
 }
 
 .bs-secondary-button {
@@ -65,6 +66,7 @@
   padding: 10px 12px;
   margin-bottom: 15px;
   font-size: 0.85rem;
+  flex-shrink: 0;
 }
 
 .bs-customer-name {
@@ -83,6 +85,7 @@
 .bs-search-wrapper {
   position: relative;
   margin-bottom: 20px;
+  flex-shrink: 0;
 }
 
 .bs-search-input {
@@ -133,8 +136,18 @@
   color: #888;
 }
 
+/* ── Scrollable cart area ──
+   flex: 1 alone isn't enough here: a flex item's default min-height
+   is "auto", which means it refuses to shrink below its own content's
+   natural height even when flex: 1 says it should. That let a long
+   cart grow the whole sidebar past 100vh instead of scrolling inside
+   itself, pushing Bill Summary and the Payment/Quotation/Return
+   buttons below the fold. min-height: 0 overrides that default so
+   this panel actually shrinks to fit and scrolls internally, keeping
+   everything below it always on-screen. */
 .bs-products-container {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   margin-bottom: 20px;
 }
@@ -162,6 +175,14 @@
   background-color: #fff;
   border-radius: 6px;
   border: 1px solid #eee;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+/* ── Highlight the most recently added/updated line item ── */
+.bs-product-row--latest {
+  border-color: #16a34a;
+  background-color: #f0fdf4;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15);
 }
 
 .bs-product-main {
@@ -247,6 +268,7 @@
   border-radius: 6px;
   border: 1px solid #ddd;
   margin-bottom: 20px;
+  flex-shrink: 0;
 }
 
 .bs-summary-row {
@@ -270,6 +292,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .bs-primary-button {

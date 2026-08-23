@@ -131,6 +131,21 @@ function BillingSection({ products = [], cart = [], setCart }) {
     focusSearchInput();
   }, []);
 
+  // ── Re-focus the search box whenever a new line item lands in the cart ──
+  // Covers additions made from this component's own search dropdown (which
+  // already calls focusSearchInput directly) AND additions made from the
+  // product grid in the parent component, which has no direct handle on
+  // this component's input. Only fires when the cart actually grows (a
+  // brand-new line, not a quantity +/- on an existing one), so it doesn't
+  // yank focus away while someone's adjusting quantities elsewhere.
+  const prevCartLengthRef = useRef(cart.length);
+  useEffect(() => {
+    if (cart.length > prevCartLengthRef.current) {
+      focusSearchInput();
+    }
+    prevCartLengthRef.current = cart.length;
+  }, [cart]);
+
   const discount = discountByInvoice[invoiceNumber] ?? 0;
 
   const handleDiscountChange = (value) => {
@@ -282,13 +297,24 @@ function BillingSection({ products = [], cart = [], setCart }) {
       discount: safeDiscount,
       payableAmount,
       counterId: Number(counterId),
-      items: cart.map((item) => ({
-        productId: item.id,
-        quantity: item.quantity,
-        salePrice: item.price,
-        afterTaxation: item.price * item.quantity,
-        hsnCode: item.hsn
-      })),
+      items: cart.map((item) => {
+        const mrp = Number(item.mrp) || item.price;
+        // Same per-line discount convention used everywhere else in the UI
+        // (product cards, cart rows, invoice receipt): the gap between MRP
+        // and the actual sale price, scaled by quantity. Sent explicitly so
+        // the backend stores exactly what the customer was shown at
+        // checkout, rather than falling back to its own derivation.
+        const itemDiscount = Math.max(mrp - item.price, 0) * item.quantity;
+        return {
+          productId: item.id,
+          quantity: item.quantity,
+          salePrice: item.price,
+          mrp,
+          discount: itemDiscount,
+          afterTaxation: item.price * item.quantity,
+          hsnCode: item.hsn
+        };
+      }),
       payments: currentPayments.map((p) => ({
         paymentMethod: p.method,
         bankAccountNumber: p.bankAccountNumber ?? null,
@@ -443,13 +469,17 @@ function BillingSection({ products = [], cart = [], setCart }) {
           {invoiceNumber ? `Invoice #${invoiceNumber}` : 'No customer added yet'}
         </h3>
         {cart.length === 0 && <p className="bs-empty-text">Cart is empty.</p>}
-        {cart.map((product) => {
+        {cart.map((product, index) => {
           const mrp = Number(product.mrp) || product.price;
           const unitDiscount = Math.max(mrp - product.price, 0);
           const itemDiscount = unitDiscount * product.quantity;
           const saleValue = product.price * product.quantity;
+          const isLatest = index === cart.length - 1;
           return (
-            <div key={product.id} className="bs-product-row">
+            <div
+              key={product.id}
+              className={`bs-product-row${isLatest ? ' bs-product-row--latest' : ''}`}
+            >
               <div className="bs-product-main">
                 <span className="bs-product-name">{product.name}</span>
                 <span className="bs-product-barcode">Barcode: {product.barcode}</span>
