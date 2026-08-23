@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import './billingSection.css';
 import AddCustomer from './addCustomer';
 import Quotation from './quotation';
 import Payment from './payment';
@@ -188,6 +189,7 @@ function BillingSection({ products = [], cart = [], setCart }) {
       return;
     }
     const salePrice = Number(product.retailSalePrice) || 0;
+    const mrp = Number(product.mrp) || 0;
     const cgst = Number(product.cgst) || 0;
     const sgst = Number(product.sgst) || 0;
     // Normalize HSN field: product master may send it as HSNCode or hsnCode.
@@ -202,7 +204,7 @@ function BillingSection({ products = [], cart = [], setCart }) {
       }
       return [
         ...prevCart,
-        { id: product.id, name: product.productName, price: salePrice, cgst, sgst, barcode: product.barcode, hsn, quantity: 1 }
+        { id: product.id, name: product.productName, price: salePrice, mrp, cgst, sgst, barcode: product.barcode, hsn, quantity: 1 }
       ];
     });
     setItemSearchTerm('');
@@ -384,16 +386,16 @@ function BillingSection({ products = [], cart = [], setCart }) {
   };
 
   return (
-    <aside className="billing-sidebar" style={styles.sidebar}>
+    <aside className="billing-sidebar bs-sidebar">
 
-      <div style={styles.topActions}>
-        <button style={styles.secondaryButton} onClick={() => setIsCustomerWindowOpen(true)}>
+      <div className="bs-top-actions">
+        <button className="bs-secondary-button" onClick={() => setIsCustomerWindowOpen(true)}>
           Add Customer
         </button>
         {isCustomerWindowOpen && (
           <AddCustomer onClose={() => setIsCustomerWindowOpen(false)} onCustomerAdded={handleCustomerAdded} />
         )}
-        <button style={styles.secondaryButton} onClick={() => setIsQuotationListOpen(true)}>
+        <button className="bs-secondary-button" onClick={() => setIsQuotationListOpen(true)}>
           Quotations
         </button>
         {isQuotationListOpen && (
@@ -402,16 +404,16 @@ function BillingSection({ products = [], cart = [], setCart }) {
       </div>
 
       {selectedCustomer && (
-        <div style={styles.customerInfo}>
-          <span style={styles.customerName}>{selectedCustomer.customerName ?? selectedCustomer.name}</span>
-          <span style={styles.customerNumber}>{selectedCustomer.mobileNumber ?? selectedCustomer.phoneNumber}</span>
-          <span style={styles.customerWallet}>
+        <div className="bs-customer-info">
+          <span className="bs-customer-name">{selectedCustomer.customerName ?? selectedCustomer.name}</span>
+          <span className="bs-customer-number">{selectedCustomer.mobileNumber ?? selectedCustomer.phoneNumber}</span>
+          <span className="bs-customer-wallet">
             Wallet: ₹{Number(selectedCustomer.currentBalance ?? selectedCustomer.walletValue ?? 0).toFixed(2)}
           </span>
         </div>
       )}
 
-      <div style={styles.searchWrapper}>
+      <div className="bs-search-wrapper">
         <input
           ref={searchInputRef}
           type="text"
@@ -419,15 +421,15 @@ function BillingSection({ products = [], cart = [], setCart }) {
           value={itemSearchTerm}
           onChange={(e) => setItemSearchTerm(e.target.value)}
           onKeyDown={handleSearchKeyDown}
-          style={styles.searchInput}
+          className="bs-search-input"
         />
         {searchResults.length > 0 && (
-          <ul style={styles.dropdown}>
+          <ul className="bs-dropdown">
             {searchResults.map(product => (
-              <li key={product.id} onClick={() => handleAddFromSearch(product)} style={styles.dropdownItem}>
-                <div style={styles.dropdownItemInfo}>
+              <li key={product.id} onClick={() => handleAddFromSearch(product)} className="bs-dropdown-item">
+                <div className="bs-dropdown-item-info">
                   <span>{product.productName}</span>
-                  <span style={styles.dropdownBarcode}>Barcode: {product.barcode}</span>
+                  <span className="bs-dropdown-barcode">Barcode: {product.barcode}</span>
                 </div>
                 <strong>₹{Number(product.retailSalePrice).toFixed(2)}</strong>
               </li>
@@ -436,44 +438,57 @@ function BillingSection({ products = [], cart = [], setCart }) {
         )}
       </div>
 
-      <div style={styles.productsContainer}>
-        <h3 style={styles.sectionTitle}>
+      <div className="bs-products-container">
+        <h3 className="bs-section-title">
           {invoiceNumber ? `Invoice #${invoiceNumber}` : 'No customer added yet'}
         </h3>
-        {cart.length === 0 && <p style={styles.emptyText}>Cart is empty.</p>}
+        {cart.length === 0 && <p className="bs-empty-text">Cart is empty.</p>}
         {cart.map((product) => {
-          const itemTotal = product.price * product.quantity;
-          const itemTaxable = itemTotal / (100 + 2 * product.cgst) * 100;
-          const itemTax = itemTaxable * (product.cgst / 100) * 2;
+          const mrp = Number(product.mrp) || product.price;
+          const unitDiscount = Math.max(mrp - product.price, 0);
+          const itemDiscount = unitDiscount * product.quantity;
+          const saleValue = product.price * product.quantity;
           return (
-            <div key={product.id} style={styles.productRow}>
-              <div style={styles.productInfo}>
-                <span style={styles.productName}>{product.name}</span>
-                <span style={styles.productPrice}>₹{product.price} x {product.quantity}</span>
-                <div style={styles.productTaxBreakdown}>
-                  <span>Taxable: ₹{itemTaxable.toFixed(2)}</span>
-                  <span>Tax: ₹{itemTax.toFixed(2)}</span>
-                  <span style={styles.productTotal}>Total: ₹{itemTotal.toFixed(2)}</span>
-                </div>
+            <div key={product.id} className="bs-product-row">
+              <div className="bs-product-main">
+                <span className="bs-product-name">{product.name}</span>
+                <span className="bs-product-barcode">Barcode: {product.barcode}</span>
               </div>
-              <div style={styles.quantityControls}>
-                <button onClick={() => decreaseCount(product.id)} style={styles.iconButton}>-</button>
-                <span style={styles.quantityText}>{product.quantity}</span>
-                <button onClick={() => increaseCount(product.id)} style={styles.iconButton}>+</button>
+              <div className="bs-product-columns">
+                <div className="bs-product-col">
+                  <span className="bs-col-label">Qty</span>
+                  <div className="bs-quantity-controls">
+                    <button onClick={() => decreaseCount(product.id)} className="bs-icon-button">-</button>
+                    <span className="bs-quantity-text">{product.quantity}</span>
+                    <button onClick={() => increaseCount(product.id)} className="bs-icon-button">+</button>
+                  </div>
+                </div>
+                <div className="bs-product-col">
+                  <span className="bs-col-label">MRP</span>
+                  <span className="bs-col-value">₹{mrp.toFixed(2)}</span>
+                </div>
+                <div className="bs-product-col">
+                  <span className="bs-col-label">Discount</span>
+                  <span className="bs-col-value">₹{itemDiscount.toFixed(2)}</span>
+                </div>
+                <div className="bs-product-col">
+                  <span className="bs-col-label">Sale Value</span>
+                  <span className="bs-col-value bs-col-value--strong">₹{saleValue.toFixed(2)}</span>
+                </div>
               </div>
             </div>
           );
         })}
       </div>
 
-      <div style={styles.summaryContainer}>
-        <h3 style={styles.sectionTitle}>Bill Summary</h3>
-        <div style={styles.summaryRow}>
+      <div className="bs-summary-container">
+        <h3 className="bs-section-title">Bill Summary</h3>
+        <div className="bs-summary-row">
           <span>Taxable Amount:</span>
           <span>₹{taxableAmount.toFixed(2)}</span>
         </div>
 
-        <div style={styles.summaryRow}>
+        <div className="bs-summary-row">
           <span>Discount:</span>
           <input
             type="number"
@@ -481,63 +496,63 @@ function BillingSection({ products = [], cart = [], setCart }) {
             max={totalAmount}
             value={discount}
             onChange={(e) => handleDiscountChange(e.target.value)}
-            style={styles.discountInput}
+            className="bs-discount-input"
           />
         </div>
 
-        <div style={styles.summaryRow}>
+        <div className="bs-summary-row">
           <span>Tax Amount:</span>
           <span>₹{taxAmount.toFixed(2)}</span>
         </div>
 
-        <div style={styles.summaryTotal}>
+        <div className="bs-summary-total">
           <span>Payable Amount:</span>
           <span>₹{payableAmount.toFixed(2)}</span>
         </div>
 
         {amountPaid > 0 && (
-          <div style={styles.summaryRow}>
+          <div className="bs-summary-row">
             <span>Paid So Far:</span>
             <span>₹{amountPaid.toFixed(2)} / ₹{payableAmount.toFixed(2)}</span>
           </div>
         )}
 
-        {transactionError && <p style={styles.errorText}>{transactionError}</p>}
+        {transactionError && <p className="bs-error-text">{transactionError}</p>}
       </div>
 
-      <div style={styles.bottomActions}>
+      <div className="bs-bottom-actions">
         <button
-          style={{...styles.primaryButton, backgroundColor: '#007bff'}}
+          className="bs-primary-button bs-primary-button--payment"
           onClick={() => setIsPaymentWindowOpen(true)}
           disabled={!invoiceNumber || cart.length === 0}
         >
           Payment
         </button>
         <button
-          style={{...styles.primaryButton, backgroundColor: '#ffc107', color: '#333'}}
+          className="bs-primary-button bs-primary-button--quotation"
           onClick={handleSaveQuotation}
           disabled={!invoiceNumber}
         >
           Quotation
         </button>
-        <button style={{...styles.primaryButton, backgroundColor: '#dc3545'}}>Return</button>
+        <button className="bs-primary-button bs-primary-button--return">Return</button>
       </div>
 
       {isPaymentWindowOpen && (
         <Payment
-  invoiceNumber={invoiceNumber}
-  payableAmount={payableAmount}
-  walletBalance={Number(selectedCustomer?.currentBalance ?? selectedCustomer?.walletValue ?? 0)}
-  customerPhone={selectedCustomer?.mobileNumber ?? selectedCustomer?.phoneNumber}
-  existingPayments={currentPayments}
-  onUpdatePayments={handleUpdatePayments}
-  onComplete={handlePaymentComplete}
-  onClose={() => {
-    setIsPaymentWindowOpen(false);
-    focusSearchInput();
-  }}
-  isSubmitting={isSubmittingTransaction}
-/>
+          invoiceNumber={invoiceNumber}
+          payableAmount={payableAmount}
+          walletBalance={Number(selectedCustomer?.currentBalance ?? selectedCustomer?.walletValue ?? 0)}
+          customerPhone={selectedCustomer?.mobileNumber ?? selectedCustomer?.phoneNumber}
+          existingPayments={currentPayments}
+          onUpdatePayments={handleUpdatePayments}
+          onComplete={handlePaymentComplete}
+          onClose={() => {
+            setIsPaymentWindowOpen(false);
+            focusSearchInput();
+          }}
+          isSubmitting={isSubmittingTransaction}
+        />
       )}
 
       {completedInvoice && (
@@ -547,229 +562,5 @@ function BillingSection({ products = [], cart = [], setCart }) {
     </aside>
   );
 }
-// styles object unchanged from your last version
-
-// Inline styles
-const styles = {
-  sidebar: {
-    width: '30%',
-    minWidth: '300px',
-    height: '100vh',
-    position: 'fixed',
-    right: 0,
-    top: 0,
-    backgroundColor: '#f8f9fa',
-    borderLeft: '1px solid #ddd',
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '20px',
-    boxSizing: 'border-box',
-    boxShadow: '-2px 0 5px rgba(0,0,0,0.05)',
-    zIndex: 100
-  },
-  errorText: {
-    color: '#dc3545',
-    fontSize: '0.85rem',
-    margin: '8px 0 0 0'
-  },
-  discountInput: {
-  width: '90px',
-  padding: '4px 8px',
-  border: '1px solid #ccc',
-  borderRadius: '4px',
-  fontSize: '0.9rem',
-  textAlign: 'right'
-},
-  topActions: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    gap: '10px',
-    marginBottom: '15px'
-  },
-  secondaryButton: {
-    flex: 1,
-    padding: '10px',
-    backgroundColor: '#fff',
-    border: '1px solid #ccc',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontWeight: 'bold'
-  },
-  customerInfo: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    border: '1px solid #ddd',
-    borderRadius: '6px',
-    padding: '10px 12px',
-    marginBottom: '15px',
-    fontSize: '0.85rem'
-  },
-  customerName: {
-    fontWeight: 'bold'
-  },
-  customerNumber: {
-    color: '#555'
-  },
-  customerWallet: {
-    fontWeight: 'bold',
-    color: '#28a745'
-  },
-  searchWrapper: {
-    position: 'relative',
-    marginBottom: '20px'
-  },
-  searchInput: {
-    width: '100%',
-    padding: '10px 15px',
-    borderRadius: '6px',
-    border: '1px solid #aaa',
-    fontSize: '15px',
-    boxSizing: 'border-box',
-    outline: 'none'
-  },
-  dropdown: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    backgroundColor: '#fff',
-    border: '1px solid #ccc',
-    borderRadius: '4px',
-    maxHeight: '200px',
-    overflowY: 'auto',
-    margin: '5px 0 0 0',
-    padding: 0,
-    listStyleType: 'none',
-    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-    zIndex: 10
-  },
-  dropdownItem: {
-    padding: '10px 15px',
-    cursor: 'pointer',
-    borderBottom: '1px solid #eee',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#fff'
-  },
-  dropdownItemInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px'
-  },
-  dropdownBarcode: {
-    fontSize: '0.75rem',
-    color: '#888'
-  },
-  productsContainer: {
-    flex: 1,
-    overflowY: 'auto',
-    marginBottom: '20px'
-  },
-  sectionTitle: {
-    margin: '0 0 10px 0',
-    fontSize: '1.1rem',
-    borderBottom: '2px solid #ddd',
-    paddingBottom: '5px'
-  },
-  emptyText: {
-    color: '#888',
-    fontStyle: 'italic'
-  },
-  productRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '10px',
-    padding: '10px',
-    backgroundColor: '#fff',
-    borderRadius: '6px',
-    border: '1px solid #eee'
-  },
-  productInfo: {
-    display: 'flex',
-    flexDirection: 'column'
-  },
-  productName: {
-    fontWeight: 'bold',
-    fontSize: '0.95rem'
-  },
-  productPrice: {
-    color: '#666',
-    fontSize: '0.85rem'
-  },
-  productTaxBreakdown: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '8px',
-    marginTop: '6px',
-    fontSize: '0.75rem',
-    color: '#777'
-  },
-  productTotal: {
-    fontWeight: 'bold',
-    color: '#333'
-  },
-  quantityControls: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px'
-  },
-  iconButton: {
-    width: '28px',
-    height: '28px',
-    borderRadius: '50%',
-    border: '1px solid #ccc',
-    backgroundColor: '#fff',
-    cursor: 'pointer',
-    fontSize: '1rem',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  quantityText: {
-    fontWeight: 'bold',
-    minWidth: '20px',
-    textAlign: 'center'
-  },
-  summaryContainer: {
-    backgroundColor: '#fff',
-    padding: '15px',
-    borderRadius: '6px',
-    border: '1px solid #ddd',
-    marginBottom: '20px'
-  },
-  summaryRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    marginBottom: '10px',
-    color: '#555'
-  },
-  summaryTotal: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    marginTop: '10px',
-    paddingTop: '10px',
-    borderTop: '1px dashed #ccc',
-    fontWeight: 'bold',
-    fontSize: '1.2rem'
-  },
-  bottomActions: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px'
-  },
-  primaryButton: {
-    padding: '12px',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontWeight: 'bold',
-    fontSize: '1rem'
-  }
-};
 
 export default BillingSection;

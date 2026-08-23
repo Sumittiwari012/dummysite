@@ -1,0 +1,301 @@
+/* Extracted from BillingSection.jsx's inline `styles` object.
+   Class names follow the original style key, kebab-cased and prefixed
+   with `bs-` (BillingSection) to avoid clashing with other components'
+   classes. Three buttons that previously got a per-button color override
+   via `{...styles.primaryButton, backgroundColor: '...'}` are now
+   `bs-primary-button` plus a modifier class (`--payment`, `--quotation`,
+   `--return`) instead of inline overrides. */
+
+.bs-sidebar {
+  width: 30%;
+  min-width: 300px;
+  height: 100vh;
+  position: fixed;
+  right: 0;
+  top: 0;
+  background-color: #f8f9fa;
+  border-left: 1px solid #ddd;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  box-sizing: border-box;
+  box-shadow: -2px 0 5px rgba(0, 0, 0, 0.05);
+  z-index: 100;
+}
+
+.bs-error-text {
+  color: #dc3545;
+  font-size: 0.85rem;
+  margin: 8px 0 0 0;
+}
+
+.bs-discount-input {
+  width: 90px;
+  padding: 4px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  text-align: right;
+}
+
+.bs-top-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.bs-secondary-button {
+  flex: 1;
+  padding: 10px;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.bs-customer-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 15px;
+  font-size: 0.85rem;
+}
+
+.bs-customer-name {
+  font-weight: bold;
+}
+
+.bs-customer-number {
+  color: #555;
+}
+
+.bs-customer-wallet {
+  font-weight: bold;
+  color: #28a745;
+}
+
+.bs-search-wrapper {
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.bs-search-input {
+  width: 100%;
+  padding: 10px 15px;
+  border-radius: 6px;
+  border: 1px solid #aaa;
+  font-size: 15px;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.bs-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  margin: 5px 0 0 0;
+  padding: 0;
+  list-style-type: none;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+
+.bs-dropdown-item {
+  padding: 10px 15px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #fff;
+}
+
+.bs-dropdown-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bs-dropdown-barcode {
+  font-size: 0.75rem;
+  color: #888;
+}
+
+.bs-products-container {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 20px;
+}
+
+.bs-section-title {
+  margin: 0 0 10px 0;
+  font-size: 1.1rem;
+  border-bottom: 2px solid #ddd;
+  padding-bottom: 5px;
+}
+
+.bs-empty-text {
+  color: #888;
+  font-style: italic;
+}
+
+/* ── Cart item row: product name + barcode on top, then a 4-column
+   strip of Qty / MRP / Discount / Sale Value underneath. ── */
+.bs-product-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  background-color: #fff;
+  border-radius: 6px;
+  border: 1px solid #eee;
+}
+
+.bs-product-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bs-product-name {
+  font-weight: bold;
+  font-size: 0.95rem;
+  color: #222;
+}
+
+.bs-product-barcode {
+  font-size: 0.78rem;
+  color: #888;
+}
+
+.bs-product-columns {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #e5e5e5;
+}
+
+.bs-product-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.bs-col-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #999;
+}
+
+.bs-col-value {
+  font-size: 0.88rem;
+  color: #333;
+}
+
+.bs-col-value--strong {
+  font-weight: bold;
+  color: #16a34a;
+}
+
+.bs-quantity-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bs-icon-button {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid #ccc;
+  background-color: #fff;
+  cursor: pointer;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.bs-quantity-text {
+  font-weight: bold;
+  min-width: 16px;
+  text-align: center;
+  font-size: 0.88rem;
+}
+
+.bs-summary-container {
+  background-color: #fff;
+  padding: 15px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  margin-bottom: 20px;
+}
+
+.bs-summary-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  color: #555;
+}
+
+.bs-summary-total {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #ccc;
+  font-weight: bold;
+  font-size: 1.2rem;
+}
+
+.bs-bottom-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bs-primary-button {
+  padding: 12px;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 1rem;
+}
+
+.bs-primary-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.bs-primary-button--payment {
+  background-color: #007bff;
+}
+
+.bs-primary-button--quotation {
+  background-color: #ffc107;
+  color: #333;
+}
+
+.bs-primary-button--return {
+  background-color: #dc3545;
+}

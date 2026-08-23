@@ -29,7 +29,13 @@ function InvoiceBill({ invoice, onClose }) {
     const itemTaxable = itemTotal / (100 + 2 * cgst) * 100;
     const itemTax = itemTaxable * (cgst / 100) * 2;
     const hsn = item.hsn ?? item.hsnCode ?? item.HSNCode ?? '-';
-    return { ...item, cgst, itemTotal, itemTaxable, itemTax, hsn };
+    // MRP isn't always named consistently coming off the cart item, so try
+    // the common variants before falling back to the selling price.
+    const mrp = Number(item.mrp ?? item.MRP ?? item.Mrp ?? item.price) || 0;
+    // Per-item discount is the gap between MRP and the actual sale price,
+    // scaled by quantity — this was previously hardcoded to ₹0.00 below.
+    const itemDiscount = Math.max(mrp - item.price, 0) * item.quantity;
+    return { ...item, cgst, itemTotal, itemTaxable, itemTax, hsn, mrp, itemDiscount };
   };
 
   const taxDetailRows = sortedRates.map((rate, idx) => {
@@ -217,21 +223,24 @@ function InvoiceBill({ invoice, onClose }) {
           {/* Main Items Table */}
           <table style={styles.table}>
             <colgroup>
-              <col style={{ width: '40%' }} />
-              <col style={{ width: '20%' }} />
-              <col style={{ width: '20%' }} />
+              <col style={{ width: '35%' }} />
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '15%' }} />
               <col style={{ width: '20%' }} />
             </colgroup>
             <thead>
               <tr>
                 <th style={styles.th}>Item</th>
                 <th style={styles.th}>QTY/Unit</th>
+                <th style={{...styles.th, textAlign: 'right'}}>MRP</th>
                 <th style={{...styles.th, textAlign: 'right'}}>Disc.Amt</th>
                 <th style={{...styles.th, textAlign: 'right'}}>Net.Amt</th>
               </tr>
               <tr>
                 <th style={styles.thSub}>Description</th>
                 <th style={styles.thSub}>HSN-SAC</th>
+                <th style={styles.thSub}></th>
                 <th style={{...styles.thSub, textAlign: 'right'}} colSpan={2}>Taxable Amount</th>
               </tr>
             </thead>
@@ -239,7 +248,7 @@ function InvoiceBill({ invoice, onClose }) {
               {sortedRates.map((rate, groupIdx) => (
                 <React.Fragment key={rate}>
                   <tr>
-                    <td colSpan={4} style={styles.groupHeaderCell}>
+                    <td colSpan={5} style={styles.groupHeaderCell}>
                       {groupLabels[groupIdx] ?? groupIdx + 1}) CGST@{rate}% SGST@{rate}%
                     </td>
                   </tr>
@@ -248,12 +257,14 @@ function InvoiceBill({ invoice, onClose }) {
                       <tr>
                         <td style={styles.td}>{item.barcode ?? item.id}</td>
                         <td style={styles.td}>{item.quantity} PC</td>
-                        <td style={{...styles.td, textAlign: 'right'}}>₹0.00</td>
+                        <td style={{...styles.td, textAlign: 'right'}}>₹{item.mrp.toFixed(2)}</td>
+                        <td style={{...styles.td, textAlign: 'right'}}>₹{item.itemDiscount.toFixed(2)}</td>
                         <td style={{...styles.td, textAlign: 'right'}}>₹{item.itemTotal.toFixed(2)}</td>
                       </tr>
                       <tr>
                         <td style={styles.tdSub}>{item.name}</td>
                         <td style={styles.tdSub}>{item.hsn}</td>
+                        <td style={styles.tdSub}></td>
                         <td style={{...styles.tdSub, textAlign: 'right'}} colSpan={2}>₹{item.itemTaxable.toFixed(2)}</td>
                       </tr>
                     </React.Fragment>
