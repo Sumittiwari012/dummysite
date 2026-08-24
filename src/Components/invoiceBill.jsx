@@ -12,6 +12,14 @@ function InvoiceBill({ invoice, onClose }) {
 
   const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false);
   const [whatsappStatus, setWhatsappStatus] = useState('');
+  // Tracks whether the logo image actually loaded. Bundlers resolve the
+  // `import` above at build time, so the file existing there doesn't
+  // guarantee the built/deployed asset URL actually resolves at runtime
+  // (moved/renamed file, case-sensitivity mismatch between a Windows/Mac
+  // dev machine and a Linux host, or the file never got committed/deployed
+  // in the first place). Rather than silently leaving blank space when
+  // that happens, surface it clearly so it's obvious what to fix.
+  const [logoFailed, setLogoFailed] = useState(false);
 
   // ── Group items by their CGST rate ──
   const rateGroups = {};
@@ -69,6 +77,18 @@ function InvoiceBill({ invoice, onClose }) {
   const totalReceived = (payments ?? []).reduce((sum, p) => sum + p.amount, 0);
   const changeDue = Math.max(totalReceived - payableAmount, 0);
 
+  // The invoice-level `discount` field isn't always populated correctly
+  // upstream (it can come through as ₹0.00 even when individual items were
+  // sold below MRP), so derive the real total discount from the cart items
+  // themselves — same math already used for each row's "Disc.Amt" column —
+  // and use whichever is larger as the source of truth.
+  const computedDiscount = cart.reduce(
+    (sum, item) => sum + withItemMath(item).itemDiscount,
+    0
+  );
+  const discountValue = Math.max(computedDiscount, Number(discount) || 0);
+  const hasDiscount = discountValue > 0;
+
   const handlePrint = () => {
     const printContent = document.getElementById('invoice-print-area');
     if (!printContent) return;
@@ -94,7 +114,9 @@ function InvoiceBill({ invoice, onClose }) {
             body {
               font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
               margin: 0;
-              padding: 20px;
+              /* printArea already carries its own left/right padding now,
+                 so keep this smaller to avoid doubling up the margins. */
+              padding: 10px;
               color: #000;
               font-size: 12px;
             }
@@ -190,11 +212,34 @@ function InvoiceBill({ invoice, onClose }) {
   return (
     <div style={styles.overlay}>
       <div style={styles.modalWindow}>
-        <div id="invoice-print-area">
+        <div id="invoice-print-area" style={styles.printArea}>
 
           {/* Header Section */}
           <div style={styles.header}>
-            <img src={GripStyleLogo} alt="Grip Style Logo" style={styles.logo} />
+            <img
+              src={GripStyleLogo}
+              alt="Grip Style Logo"
+              style={styles.logo}
+              onError={(e) => {
+                // Don't let a broken image just vanish into blank space —
+                // log it loudly (visible in the browser console / any
+                // error-reporting tool wired up) so a missing/renamed/
+                // case-mismatched asset on deploy is obvious immediately
+                // instead of showing up later as "the logo is just gone".
+                console.error(
+                  `Invoice logo failed to load from resolved URL: ${e.currentTarget.src}. ` +
+                  'Check that the asset file still exists at src/assets/gripstyle-logo.png, ' +
+                  'that it was committed/deployed, and that its filename casing matches ' +
+                  'exactly (case-sensitive on Linux hosts).'
+                );
+                setLogoFailed(true);
+              }}
+            />
+            {logoFailed && (
+              <p style={{ ...styles.address, color: '#dc3545', fontSize: '0.75rem', margin: '4px 0 0 0' }}>
+                (Logo image failed to load — check console for details)
+              </p>
+            )}
             <h1 style={styles.companyName}>Mohua's Fashion Industries Pvt. Ltd</h1>
             <p style={styles.address}>
               Registered Office: 55/6 S.B.N.G LANE, BARANAGAR, KOLKATA - 700036
@@ -274,10 +319,14 @@ function InvoiceBill({ invoice, onClose }) {
             </tbody>
           </table>
 
-          {/* Totals Section */}
+          {/* Totals Section
+              Note: "Total Discount" line intentionally removed here — the
+              discount is now only surfaced as the "YOU SAVED" stamp near the
+              bottom, which sums each item's individual MRP-vs-sale-price
+              discount rather than relying on the (unreliable) invoice-level
+              discount field. */}
           <div style={styles.totalsBlock}>
             <div style={styles.summaryRow}><span>Gross Total:</span><span>₹{totalAmount.toFixed(2)}</span></div>
-            <div style={styles.summaryRow}><span>Total Discount:</span><span>₹{Number(discount).toFixed(2)}</span></div>
             <div style={styles.summaryTotal}><span>Total Invoice Amount:</span><span>₹{payableAmount.toFixed(2)}</span></div>
           </div>
 
@@ -315,21 +364,43 @@ function InvoiceBill({ invoice, onClose }) {
             </tbody>
           </table>
 
-          <h3 style={styles.subTitle}>Tender Detail</h3>
-          <div style={styles.paymentsBlock}>
-            {(payments ?? []).map((p, i) => (
-              <div key={i} style={styles.summaryRow}>
-                <span>{p.method}</span>
-                <span>₹{p.amount.toFixed(2)}</span>
+          {/* Tender Detail — the "YOU SAVED" stamp overlays the payments
+              block specifically (not the heading), centered. The payment
+              rows get a light background + higher z-index than the stamp so
+              the amounts stay fully legible while the stamp still shows
+              through the surrounding gaps, like a rubber stamp under glass. */}
+          <div>
+            <h3 style={styles.subTitle}>Tender Detail</h3>
+            <div style={styles.paymentsWrap}>
+              {hasDiscount && (
+                <div style={styles.savingsStampOverlay}>
+                  <div style={styles.savingsStamp}>
+                    <div style={styles.savingsStampStars}>★ ★ ★</div>
+                    <div style={styles.savingsStampLabel}>YOU SAVED</div>
+                    <div style={styles.savingsStampAmount}>₹{discountValue.toFixed(2)}</div>
+                    <div style={styles.savingsStampStars}>★ ★ ★</div>
+                  </div>
+                </div>
+              )}
+              <div style={styles.paymentsBlock}>
+                {(payments ?? []).map((p, i) => (
+                  <div key={i} style={styles.tenderRow}>
+                    <span>{p.method}</span>
+                    <span></span>
+                    <span style={styles.tenderRowAmount}>₹{p.amount.toFixed(2)}</span>
+                  </div>
+                ))}
+                <div style={styles.tenderRow}>
+                  <span>TOTAL RECEIVED AMOUNT</span>
+                  <span></span>
+                  <span style={styles.tenderRowAmount}>₹{totalReceived.toFixed(2)}</span>
+                </div>
+                <div style={styles.tenderRow}>
+                  <span>CHANGE DUE</span>
+                  <span></span>
+                  <span style={styles.tenderRowAmount}>₹{changeDue.toFixed(2)}</span>
+                </div>
               </div>
-            ))}
-            <div style={styles.summaryRow}>
-              <span>TOTAL RECEIVED AMOUNT</span>
-              <span>₹{totalReceived.toFixed(2)}</span>
-            </div>
-            <div style={styles.summaryRow}>
-              <span>CHANGE DUE</span>
-              <span>₹{changeDue.toFixed(2)}</span>
             </div>
           </div>
 
@@ -412,10 +483,73 @@ const styles = {
   summaryRow: { display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginBottom: '4px' },
   summaryTotal: { display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '1rem', borderTop: '1px dashed #000', paddingTop: '8px', marginTop: '8px', marginBottom: '8px' },
   subTitle: { fontSize: '0.95rem', margin: '0 0 8px 0', fontWeight: 'bold' },
-  paymentsBlock: { marginTop: '10px', marginBottom: '15px' },
+  paymentsBlock: { marginTop: '10px', marginBottom: '15px', position: 'relative', zIndex: 1 },
+  // Grid layout (label | reserved gap | amount) instead of flex
+  // space-between, so the middle column stays a fixed width no matter how
+  // long the label or amount text is — guaranteeing the stamp overlay never
+  // collides with either regardless of content.
+  tenderRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 104px 1fr',
+    fontSize: '0.9rem',
+    marginBottom: '4px'
+  },
+  tenderRowAmount: { textAlign: 'right' },
+  // Wraps just the payments rows (not the "Tender Detail" heading) so the
+  // stamp overlay below centers on this block specifically.
+  paymentsWrap: { position: 'relative' },
+  // Sized and centered to sit in the blank gap between the left-aligned
+  // labels (Cash, TOTAL RECEIVED AMOUNT, CHANGE DUE) and the right-aligned
+  // amounts — small enough not to overlap either column.
+  savingsStampOverlay: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    zIndex: 2,
+    pointerEvents: 'none'
+  },
   countsRow: { display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', fontWeight: 'bold', borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '8px 0', marginBottom: '15px' },
   termsList: { fontSize: '0.75rem', color: '#333', paddingLeft: '15px', marginBottom: '15px', lineHeight: '1.4' },
   barcodeContainer: { display: 'flex', justifyContent: 'center', marginTop: '10px' },
+  // Padding lives on the print area itself (not just the on-screen modal)
+  // so both the print iframe and the html2canvas/PDF capture — which grab
+  // this element's innerHTML/DOM directly — get proper side margins instead
+  // of content running flush to the page edges.
+  printArea: { padding: '8px 28px 24px 28px' },
+  // "You Saved" stamp styles — sized to fit the blank gap between the
+  // payment labels and their amounts, not overlapping either.
+  savingsStamp: {
+    width: '96px',
+    height: '96px',
+    borderRadius: '50%',
+    border: '2px double #d9232d',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: 'rotate(-15deg)',
+    color: '#d9232d',
+    textAlign: 'center',
+    fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+    opacity: 0.85
+  },
+  savingsStampStars: {
+    fontSize: '0.45rem',
+    letterSpacing: '1.5px',
+    lineHeight: 1
+  },
+  savingsStampLabel: {
+    fontSize: '0.58rem',
+    fontWeight: 'bold',
+    letterSpacing: '0.8px',
+    margin: '3px 0'
+  },
+  savingsStampAmount: {
+    fontSize: '0.82rem',
+    fontWeight: 900,
+    letterSpacing: '0.3px'
+  },
   actions: { display: 'flex', gap: '12px', marginTop: '20px' },
   printButton: { flex: 1, padding: '10px', border: '1px solid #000', backgroundColor: '#fff', fontWeight: 'bold', cursor: 'pointer', borderRadius: '4px' },
   whatsappButton: { flex: 1, padding: '10px', border: 'none', backgroundColor: '#25D366', color: '#fff', fontWeight: 'bold', cursor: 'pointer', borderRadius: '4px' },
