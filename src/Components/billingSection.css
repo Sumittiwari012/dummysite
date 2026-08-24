@@ -30,12 +30,14 @@
 }
 
 .bs-discount-input {
-  width: 90px;
-  padding: 4px 8px;
+  width: 70px;
+  min-width: 0;
+  padding: 4px 6px;
   border: 1px solid #ccc;
   border-radius: 4px;
   font-size: 0.9rem;
   text-align: right;
+  box-sizing: border-box;
 }
 
 .bs-top-actions {
@@ -262,30 +264,128 @@
   font-size: 0.88rem;
 }
 
-.bs-summary-container {
+/* ── Row holding Coupon Code (left) and Bill Summary (right) side by side,
+   each taking up half the available width. ── */
+.bs-coupon-summary-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 15px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.bs-coupon-summary-row > .bs-coupon-container,
+.bs-coupon-summary-row > .bs-summary-container {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-bottom: 0;
+  box-sizing: border-box;
+}
+
+/* ── Coupon code section ── */
+.bs-coupon-container {
   background-color: #fff;
-  padding: 15px;
+  padding: 10px 15px;
   border-radius: 6px;
   border: 1px solid #ddd;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.bs-coupon-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bs-coupon-input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.88rem;
+  outline: none;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.bs-coupon-apply-button {
+  padding: 8px 14px;
+  background-color: #16a34a;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.bs-coupon-apply-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.bs-coupon-applied-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #f0fdf4;
+  border: 1px solid #16a34a;
+  border-radius: 4px;
+  padding: 8px 10px;
+  gap: 8px;
+}
+
+.bs-coupon-applied-text {
+  font-size: 0.85rem;
+  color: #166534;
+  font-weight: bold;
+}
+
+.bs-coupon-remove-button {
+  background: none;
+  border: none;
+  color: #dc3545;
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+/* ── Bill Summary: padding/spacing/font trimmed down from the original
+   (15px→10px/15px padding, 10px→6px row gaps, 1.2rem→1.05rem total)
+   so the section takes noticeably less vertical space. ── */
+.bs-summary-container {
+  background-color: #fff;
+  padding: 10px 15px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  margin-bottom: 15px;
   flex-shrink: 0;
 }
 
 .bs-summary-row {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 10px;
+  align-items: center;
+  margin-bottom: 6px;
   color: #555;
+  font-size: 0.88rem;
+  gap: 6px;
 }
 
 .bs-summary-total {
   display: flex;
   justify-content: space-between;
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: 6px;
+  padding-top: 6px;
   border-top: 1px dashed #ccc;
   font-weight: bold;
-  font-size: 1.2rem;
+  font-size: 1.05rem;
 }
 
 .bs-bottom-actions {
@@ -317,8 +417,4 @@
 .bs-primary-button--quotation {
   background-color: #ffc107;
   color: #333;
-}
-
-.bs-primary-button--return {
-  background-color: #dc3545;
 }

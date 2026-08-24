@@ -113,6 +113,12 @@ function BillingSection({ products = [], cart = [], setCart }) {
   const [discountByInvoice, setDiscountByInvoice] = useState({});
   const [paymentsByInvoice, setPaymentsByInvoice] = useState({});
 
+  // ── Coupon code (scoped to the current invoice, mirrors discount/payments) ──
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null); // { code, discountAmount }
+  const [couponError, setCouponError] = useState('');
+  const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
+
   const [completedInvoice, setCompletedInvoice] = useState(null); // holds data for the receipt modal
   const [isSubmittingTransaction, setIsSubmittingTransaction] = useState(false);
   const [transactionError, setTransactionError] = useState('');
@@ -152,6 +158,41 @@ function BillingSection({ products = [], cart = [], setCart }) {
     setDiscountByInvoice((prev) => ({ ...prev, [invoiceNumber]: value }));
   };
 
+  // ── Coupon apply/remove ──
+  // NOTE: /ValidateCoupon is a placeholder endpoint — point this at your
+  // real coupon-validation route. Expected response shape:
+  // { valid: boolean, discountAmount: number, message?: string }
+  const handleApplyCoupon = async () => {
+    const code = couponCode.trim();
+    if (!code) {
+      setCouponError('Enter a coupon code.');
+      return;
+    }
+    setIsApplyingCoupon(true);
+    setCouponError('');
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/ValidateCoupon?code=${encodeURIComponent(code)}&amount=${totalAmount}`
+      );
+      const result = await res.json();
+      if (!res.ok || !result?.valid) {
+        throw new Error(result?.message || 'Invalid or expired coupon code.');
+      }
+      setAppliedCoupon({ code, discountAmount: Number(result.discountAmount) || 0 });
+    } catch (err) {
+      setAppliedCoupon(null);
+      setCouponError(err.message || 'Could not apply coupon.');
+    } finally {
+      setIsApplyingCoupon(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCode('');
+    setCouponError('');
+  };
+
   // Display-only — peeks the next number from the backend, doesn't spend it.
   // If the sale is never completed, the counter is never touched.
   const handleCustomerAdded = async (customer) => {
@@ -159,6 +200,9 @@ function BillingSection({ products = [], cart = [], setCart }) {
     const nextInvoiceNumber = await peekInvoiceNumber();
     setInvoiceNumber(nextInvoiceNumber);
     setIsCustomerWindowOpen(false);
+    setCouponCode('');
+    setAppliedCoupon(null);
+    setCouponError('');
     focusSearchInput();
   };
 
@@ -168,6 +212,7 @@ function BillingSection({ products = [], cart = [], setCart }) {
       customer: selectedCustomer,
       cart,
       discount,
+      coupon: appliedCoupon,
       payments: paymentsByInvoice[invoiceNumber] ?? [],
       savedAt: new Date().toISOString()
     };
@@ -194,6 +239,9 @@ function BillingSection({ products = [], cart = [], setCart }) {
     if (quotation.payments?.length) {
       setPaymentsByInvoice((prev) => ({ ...prev, [freshInvoiceNumber]: quotation.payments }));
     }
+    setAppliedCoupon(quotation.coupon ?? null);
+    setCouponCode('');
+    setCouponError('');
     setIsQuotationListOpen(false);
     focusSearchInput();
   };
@@ -262,7 +310,13 @@ function BillingSection({ products = [], cart = [], setCart }) {
   }, 0);
 
   const safeDiscount = Math.min(Math.max(Number(discount) || 0, 0), totalAmount);
-  const payableAmount = totalAmount - safeDiscount;
+  // Coupon discount is capped so it can't push the payable amount below zero
+  // even after the manual discount above has already been applied.
+  const safeCouponDiscount = Math.min(
+    appliedCoupon?.discountAmount ?? 0,
+    Math.max(totalAmount - safeDiscount, 0)
+  );
+  const payableAmount = totalAmount - safeDiscount - safeCouponDiscount;
 
   const currentPayments = paymentsByInvoice[invoiceNumber] ?? [];
   const amountPaid = currentPayments.reduce((sum, p) => sum + p.amount, 0);
@@ -294,7 +348,10 @@ function BillingSection({ products = [], cart = [], setCart }) {
       phoneNumber: selectedCustomer?.mobileNumber ?? selectedCustomer?.phoneNumber,
       invoiceNumber: finalInvoiceNumber,
       totalAmount,
-      discount: safeDiscount,
+      // Combined manual + coupon discount, since the backend only tracks a
+      // single discount figure per transaction.
+      discount: safeDiscount + safeCouponDiscount,
+      couponCode: appliedCoupon?.code ?? null,
       payableAmount,
       counterId: Number(counterId),
       items: cart.map((item) => {
@@ -348,7 +405,7 @@ function BillingSection({ products = [], cart = [], setCart }) {
         customerName,
         items: cart,
         totalAmount,
-        discount: safeDiscount,
+        discount: safeDiscount + safeCouponDiscount,
         taxAmount,
         payableAmount
       });
@@ -366,6 +423,8 @@ function BillingSection({ products = [], cart = [], setCart }) {
         cart,
         totalAmount,
         discount: safeDiscount,
+        couponDiscount: safeCouponDiscount,
+        couponCode: appliedCoupon?.code ?? null,
         taxAmount,
         payableAmount,
         payments: currentPayments,
@@ -408,6 +467,9 @@ function BillingSection({ products = [], cart = [], setCart }) {
     setCart([]);
     setSelectedCustomer(null);
     setInvoiceNumber(null);
+    setCouponCode('');
+    setAppliedCoupon(null);
+    setCouponError('');
     focusSearchInput();
   };
 
@@ -511,43 +573,85 @@ function BillingSection({ products = [], cart = [], setCart }) {
         })}
       </div>
 
-      <div className="bs-summary-container">
-        <h3 className="bs-section-title">Bill Summary</h3>
-        <div className="bs-summary-row">
-          <span>Taxable Amount:</span>
-          <span>₹{taxableAmount.toFixed(2)}</span>
+      <div className="bs-coupon-summary-row">
+        <div className="bs-coupon-container">
+          <h3 className="bs-section-title">Coupon Code</h3>
+          {appliedCoupon ? (
+            <div className="bs-coupon-applied-row">
+              <span className="bs-coupon-applied-text">
+                "{appliedCoupon.code}" applied — ₹{appliedCoupon.discountAmount.toFixed(2)} off
+              </span>
+              <button className="bs-coupon-remove-button" onClick={handleRemoveCoupon}>
+                Remove
+              </button>
+            </div>
+          ) : (
+            <div className="bs-coupon-row">
+              <input
+                type="text"
+                placeholder="Enter coupon code"
+                value={couponCode}
+                onChange={(e) => setCouponCode(e.target.value)}
+                className="bs-coupon-input"
+                disabled={isApplyingCoupon}
+              />
+              <button
+                className="bs-coupon-apply-button"
+                onClick={handleApplyCoupon}
+                disabled={isApplyingCoupon || !invoiceNumber}
+              >
+                {isApplyingCoupon ? 'Applying...' : 'Apply'}
+              </button>
+            </div>
+          )}
+          {couponError && <p className="bs-error-text">{couponError}</p>}
         </div>
 
-        <div className="bs-summary-row">
-          <span>Discount:</span>
-          <input
-            type="number"
-            min="0"
-            max={totalAmount}
-            value={discount}
-            onChange={(e) => handleDiscountChange(e.target.value)}
-            className="bs-discount-input"
-          />
-        </div>
-
-        <div className="bs-summary-row">
-          <span>Tax Amount:</span>
-          <span>₹{taxAmount.toFixed(2)}</span>
-        </div>
-
-        <div className="bs-summary-total">
-          <span>Payable Amount:</span>
-          <span>₹{payableAmount.toFixed(2)}</span>
-        </div>
-
-        {amountPaid > 0 && (
+        <div className="bs-summary-container">
+          <h3 className="bs-section-title">Bill Summary</h3>
           <div className="bs-summary-row">
-            <span>Paid So Far:</span>
-            <span>₹{amountPaid.toFixed(2)} / ₹{payableAmount.toFixed(2)}</span>
+            <span>Taxable Amount:</span>
+            <span>₹{taxableAmount.toFixed(2)}</span>
           </div>
-        )}
 
-        {transactionError && <p className="bs-error-text">{transactionError}</p>}
+          <div className="bs-summary-row">
+            <span>Discount:</span>
+            <input
+              type="number"
+              min="0"
+              max={totalAmount}
+              value={discount}
+              onChange={(e) => handleDiscountChange(e.target.value)}
+              className="bs-discount-input"
+            />
+          </div>
+
+          {safeCouponDiscount > 0 && (
+            <div className="bs-summary-row">
+              <span>Coupon Discount:</span>
+              <span>-₹{safeCouponDiscount.toFixed(2)}</span>
+            </div>
+          )}
+
+          <div className="bs-summary-row">
+            <span>Tax Amount:</span>
+            <span>₹{taxAmount.toFixed(2)}</span>
+          </div>
+
+          <div className="bs-summary-total">
+            <span>Payable Amount:</span>
+            <span>₹{payableAmount.toFixed(2)}</span>
+          </div>
+
+          {amountPaid > 0 && (
+            <div className="bs-summary-row">
+              <span>Paid So Far:</span>
+              <span>₹{amountPaid.toFixed(2)} / ₹{payableAmount.toFixed(2)}</span>
+            </div>
+          )}
+
+          {transactionError && <p className="bs-error-text">{transactionError}</p>}
+        </div>
       </div>
 
       <div className="bs-bottom-actions">
@@ -565,7 +669,6 @@ function BillingSection({ products = [], cart = [], setCart }) {
         >
           Quotation
         </button>
-        <button className="bs-primary-button bs-primary-button--return">Return</button>
       </div>
 
       {isPaymentWindowOpen && (
