@@ -11,7 +11,8 @@ const COUPON_TYPE_ENDPOINT = 'https://dummypossetup.runasp.net/api/Coupon/Coupon
 // POST api/Coupon/AddCoupon — creates the coupon on the backend
 // (CouponController.AddCoupon). Expects the AddCouponDTO shape:
 // Name, DiscountTypeId, DIscountPercentage, DiscountAmount,
-// MinSpendAmount, IssuingLastdate, ExpiryDate, CouponType, TemplateId.
+// MinSpendAmount, IssuingLastdate, ExpiryDate, MinSpendToGetCoupon,
+// CouponType, TemplateId.
 const ADD_COUPON_ENDPOINT = 'https://dummypossetup.runasp.net/api/Coupon/AddCoupon'
 
 async function fetchDiscountTypes() {
@@ -58,6 +59,7 @@ const EMPTY_FORM = {
   discountTypeId: '',
   discountValue: '',
   minSpendAmount: '',
+  minSpendToGetCoupon: '',
   issuingLastDate: '',
   expiryDate: '',
   couponType: '',
@@ -80,10 +82,11 @@ const EMPTY_FORM = {
 //
 // Field names on submit are shaped to match the MCoupon backend model
 // (Name, DiscountTypeId, DIscountPercentage, DiscountAmount,
-// MinSpendAmount, IssuingLastdate, ExpiryDate, CouponType, TemplateId)
-// rather than the local camelCase form state, and are POSTed to
-// api/Coupon/AddCoupon via `addCoupon()` before `onSubmit` fires — so the
-// parent only hears about a coupon that actually made it into the DB.
+// MinSpendAmount, IssuingLastdate, ExpiryDate, MinSpendToGetCoupon,
+// CouponType, TemplateId) rather than the local camelCase form state,
+// and are POSTed to api/Coupon/AddCoupon via `addCoupon()` before
+// `onSubmit` fires — so the parent only hears about a coupon that
+// actually made it into the DB.
 function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
   const [form, setForm] = useState(EMPTY_FORM)
   const [view, setView] = useState('form') // 'form' | 'library'
@@ -199,6 +202,7 @@ function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
       MinSpendAmount: Number(form.minSpendAmount) || 0,
       IssuingLastdate: form.issuingLastDate,
       ExpiryDate: form.expiryDate,
+      MinSpendToGetCoupon: Number(form.minSpendToGetCoupon) || 0,
       CouponType: form.couponType,
       TemplateId: form.templateId ? Number(form.templateId) : null,
     }
@@ -344,18 +348,33 @@ function AddCoupon({ onCancel = () => {}, onSubmit = () => {} }) {
           </label>
         </div>
 
-        <label className="ac-field">
-          <span className="ac-label">Minimum spend ($)</span>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.minSpendAmount}
-            onChange={handleChange('minSpendAmount')}
-            placeholder="0"
-            className="ac-input"
-          />
-        </label>
+        <div className="ac-row">
+          <label className="ac-field">
+            <span className="ac-label">Minimum spend ($)</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.minSpendAmount}
+              onChange={handleChange('minSpendAmount')}
+              placeholder="0"
+              className="ac-input"
+            />
+          </label>
+
+          <label className="ac-field">
+            <span className="ac-label">Min spend to get coupon ($)</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.minSpendToGetCoupon}
+              onChange={handleChange('minSpendToGetCoupon')}
+              placeholder="0"
+              className="ac-input"
+            />
+          </label>
+        </div>
 
         <div className="ac-row">
           <label className="ac-field">

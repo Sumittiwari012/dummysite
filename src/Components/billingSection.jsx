@@ -114,14 +114,27 @@ function BillingSection({ products = [], cart = [], setCart }) {
   const [paymentsByInvoice, setPaymentsByInvoice] = useState({});
 
   // ── Coupon code (scoped to the current invoice, mirrors discount/payments) ──
+  // appliedCoupon shape: { code, raw, couponAssignmentId, customerId,
+  // requiresOtp, verified, verifiedAt }. `verified` starts out as whatever
+  // CouponCodeVerification returned — true immediately for an open coupon
+  // (no OTP needed), false for a customer-locked one until the OTP step
+  // below flips it to true. RedeemCoupon is only ever called once this is true.
   const [couponCode, setCouponCode] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState(null); // { code, discountAmount }
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponError, setCouponError] = useState('');
   const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
+
+  // ── OTP step for customer-locked coupons ──
+  const [otpValue, setOtpValue] = useState('');
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [otpError, setOtpError] = useState('');
 
   const [completedInvoice, setCompletedInvoice] = useState(null); // holds data for the receipt modal
   const [isSubmittingTransaction, setIsSubmittingTransaction] = useState(false);
   const [transactionError, setTransactionError] = useState('');
+  // Sale already went through, but something after it (e.g. redeeming the
+  // coupon) failed — surfaced separately so it never blocks/hides the receipt.
+  const [postSaleWarning, setPostSaleWarning] = useState('');
 
   const searchInputRef = useRef(null);
 
@@ -159,26 +172,61 @@ function BillingSection({ products = [], cart = [], setCart }) {
   };
 
   // ── Coupon apply/remove ──
-  // NOTE: /ValidateCoupon is a placeholder endpoint — point this at your
-  // real coupon-validation route. Expected response shape:
-  // { valid: boolean, discountAmount: number, message?: string }
+  // Calls the real CouponCodeVerification endpoint (GET) and stores its
+  // response. No redemption happens here, and no OTP step is wired up yet
+  // even if the response comes back with RequiresOtp: true. The actual
+  // per-item repricing happens in the effect below, keyed off this state.
   const handleApplyCoupon = async () => {
     const code = couponCode.trim();
     if (!code) {
       setCouponError('Enter a coupon code.');
       return;
     }
+    const phoneNumber = selectedCustomer?.mobileNumber ?? selectedCustomer?.phoneNumber;
+    if (!phoneNumber) {
+      setCouponError('Add a customer before applying a coupon.');
+      return;
+    }
+
     setIsApplyingCoupon(true);
     setCouponError('');
     try {
       const res = await fetch(
-        `${API_BASE_URL}/ValidateCoupon?code=${encodeURIComponent(code)}&amount=${totalAmount}`
+        `${API_BASE_URL}/api/CouponRedemption/CouponCodeVerification?couponCode=${encodeURIComponent(code)}&phoneNumber=${encodeURIComponent(phoneNumber)}&purchaseAmount=${Math.round(totalAmount)}`
       );
       const result = await res.json();
-      if (!res.ok || !result?.valid) {
-        throw new Error(result?.message || 'Invalid or expired coupon code.');
+
+      if (!res.ok) {
+        // Backend returns BadRequest(string) with the message as plain text/JSON.
+        throw new Error((typeof result === 'string' ? result : result?.message) || 'Invalid or expired coupon code.');
       }
-      setAppliedCoupon({ code, discountAmount: Number(result.discountAmount) || 0 });
+
+      const verifiedCoupon = {
+        code,
+        raw: result,
+        couponAssignmentId: result.couponAssignmentId ?? result.CouponAssignmentId,
+        customerId: result.customerId ?? result.CustomerId,
+        // For an open coupon (no OTP needed) the backend already returns
+        // Verified: true here — nothing further to do before redeeming.
+        // For a customer-locked coupon it comes back false, and only the
+        // OTP verification below (handleVerifyOtp) can flip it to true.
+        requiresOtp: result.requiresOtp ?? result.RequiresOtp ?? false,
+        verified: result.verified ?? result.Verified ?? false,
+        verifiedAt: new Date().toISOString()
+      };
+
+      setAppliedCoupon(verifiedCoupon);
+
+      // Persist the verification response (per invoice) so it survives a
+      // refresh; this is storage only for now, no redemption call yet.
+      try {
+        localStorage.setItem(
+          `verifiedCoupon_${invoiceNumber ?? 'pending'}`,
+          JSON.stringify(verifiedCoupon)
+        );
+      } catch (storageErr) {
+        console.error('Failed to persist verified coupon to localStorage:', storageErr);
+      }
     } catch (err) {
       setAppliedCoupon(null);
       setCouponError(err.message || 'Could not apply coupon.');
@@ -191,19 +239,197 @@ function BillingSection({ products = [], cart = [], setCart }) {
     setAppliedCoupon(null);
     setCouponCode('');
     setCouponError('');
+    setOtpValue('');
+    setOtpError('');
+    try {
+      localStorage.removeItem(`verifiedCoupon_${invoiceNumber ?? 'pending'}`);
+    } catch (storageErr) {
+      console.error('Failed to clear verified coupon from localStorage:', storageErr);
+    }
   };
 
-  // Display-only — peeks the next number from the backend, doesn't spend it.
-  // If the sale is never completed, the counter is never touched.
-  const handleCustomerAdded = async (customer) => {
-    setSelectedCustomer(customer);
-    const nextInvoiceNumber = await peekInvoiceNumber();
-    setInvoiceNumber(nextInvoiceNumber);
-    setIsCustomerWindowOpen(false);
-    setCouponCode('');
-    setAppliedCoupon(null);
-    setCouponError('');
+  // ── OTP verification for customer-locked coupons ──
+  // Checks the OTP that CouponCodeVerification sent over WhatsApp. On
+  // success, flips appliedCoupon.verified to true — that's the flag
+  // handlePaymentComplete checks before calling RedeemCoupon.
+  const handleVerifyOtp = async () => {
+    if (!appliedCoupon) return;
+    const otpVal = Number(otpValue);
+    if (!otpVal) {
+      setOtpError('Enter the OTP sent to the customer.');
+      return;
+    }
+
+    setIsVerifyingOtp(true);
+    setOtpError('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/CouponRedemption/CouponOtpVerification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          couponAssignmentId: appliedCoupon.couponAssignmentId,
+          customerId: appliedCoupon.customerId,
+          otpVal
+        })
+      });
+      const result = await res.json();
+
+      if (!res.ok) {
+        throw new Error((typeof result === 'string' ? result : result?.message) || 'Invalid or expired OTP.');
+      }
+
+      const verifiedCoupon = { ...appliedCoupon, verified: true };
+      setAppliedCoupon(verifiedCoupon);
+      setOtpValue('');
+      try {
+        localStorage.setItem(`verifiedCoupon_${invoiceNumber ?? 'pending'}`, JSON.stringify(verifiedCoupon));
+      } catch (storageErr) {
+        console.error('Failed to persist OTP-verified coupon to localStorage:', storageErr);
+      }
+    } catch (err) {
+      setOtpError(err.message || 'Could not verify OTP.');
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  // ── Actually commit the redemption ──
+  // Called from handlePaymentComplete, only once the sale itself has
+  // succeeded and appliedCoupon.verified is true (either because the
+  // coupon never needed OTP, or because handleVerifyOtp already flipped
+  // it). Non-blocking by design: the sale has already gone through by the
+  // time this runs, so a failure here shouldn't undo it — it's surfaced
+  // via postSaleWarning instead.
+  const redeemAppliedCoupon = async () => {
+    if (!appliedCoupon?.couponAssignmentId || !appliedCoupon?.customerId) {
+      return { success: false, message: 'Missing coupon assignment/customer id.' };
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/CouponRedemption/RedeemCoupon`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          couponAssignmentId: appliedCoupon.couponAssignmentId,
+          customerId: appliedCoupon.customerId,
+          verified: appliedCoupon.verified === true
+        })
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        return { success: false, message: result?.message || 'Coupon redemption failed.' };
+      }
+      return { success: true, result };
+    } catch (err) {
+      return { success: false, message: err.message || 'Coupon redemption error.' };
+    }
+  };
+
+  // ── Bake the coupon discount into each cart item's own price ──────────
+  // Every item carries `originalPrice`, its sale price before any coupon
+  // (set once, when it's added to the cart, and never touched again). This
+  // effect recomputes `item.price` from that fixed baseline every time the
+  // cart or the applied coupon changes, so it's safe to re-run repeatedly
+  // without compounding discounts:
+  //   - Percentage coupon: per-item discount = item.mrp × pct (off ITS OWN
+  //     MRP, per unit).
+  //   - Flat-amount coupon: the flat amount is split across items in
+  //     proportion to each item's share of the cart's total MRP.
+  //   - item.price = originalPrice − that item's coupon discount per unit.
+  // Because `price` (not just a separately-tracked discount number) is what
+  // gets stored on the item, every downstream consumer — the cart rows
+  // below, the /addTransaction payload, and the receipt handed to
+  // InvoiceBill — reads the correct already-discounted value with no extra
+  // calculation of its own.
+  useEffect(() => {
+    if (cart.length === 0) return;
+
+    const couponPercentage = Number(appliedCoupon?.raw?.discountPercentage ?? appliedCoupon?.raw?.DiscountPercentage) || 0;
+    const couponFlatAmount = Number(appliedCoupon?.raw?.discountAmount ?? appliedCoupon?.raw?.DiscountAmount) || 0;
+
+    const totalCartMrp = cart.reduce((sum, item) => {
+      const mrp = Number(item.mrp) || item.originalPrice || item.price;
+      return sum + mrp * item.quantity;
+    }, 0);
+
+    const rawCouponDiscounts = cart.map((item) => {
+      if (!appliedCoupon) return 0;
+      const mrp = Number(item.mrp) || item.originalPrice || item.price;
+      if (couponPercentage > 0) {
+        return mrp * (couponPercentage / 100) * item.quantity;
+      }
+      if (couponFlatAmount > 0 && totalCartMrp > 0) {
+        const mrpShare = (mrp * item.quantity) / totalCartMrp;
+        return couponFlatAmount * mrpShare;
+      }
+      return 0;
+    });
+
+    let changed = false;
+    const nextCart = cart.map((item, idx) => {
+      const originalPrice = item.originalPrice ?? item.price;
+      const couponDiscountPerUnit = item.quantity > 0 ? rawCouponDiscounts[idx] / item.quantity : 0;
+      const newPrice = Math.max(originalPrice - couponDiscountPerUnit, 0);
+
+      if (item.originalPrice === originalPrice && Math.abs(newPrice - item.price) < 0.005) {
+        return item;
+      }
+      changed = true;
+      return { ...item, originalPrice, price: newPrice };
+    });
+
+    if (changed) setCart(nextCart);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart, appliedCoupon]);
+
+  const handleAddFromSearch = (product) => {
+    if (!invoiceNumber) {
+      alert('Please add a customer before adding items.');
+      return;
+    }
+    const salePrice = Number(product.retailSalePrice) || 0;
+    const mrp = Number(product.mrp) || 0;
+    const cgst = Number(product.cgst) || 0;
+    const sgst = Number(product.sgst) || 0;
+    // Normalize HSN field: product master may send it as HSNCode or hsnCode.
+    const hsn = product.HSNCode ?? product.hsnCode ?? '-';
+
+    setCart((prevCart) => {
+      const existing = prevCart.find((item) => item.id === product.id);
+      if (existing) {
+        return prevCart.map((item) =>
+          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+        );
+      }
+      return [
+        ...prevCart,
+        {
+          id: product.id,
+          name: product.productName,
+          price: salePrice,
+          originalPrice: salePrice, // fixed baseline the coupon effect discounts from
+          mrp,
+          cgst,
+          sgst,
+          barcode: product.barcode,
+          hsn,
+          quantity: 1
+        }
+      ];
+    });
+    setItemSearchTerm('');
     focusSearchInput();
+  };
+
+  const increaseCount = (id) => {
+    setCart(cart.map(item => item.id === id ? { ...item, quantity: item.quantity + 1 } : item));
+  };
+
+  const decreaseCount = (id) => {
+    setCart((prevCart) => {
+      const item = prevCart.find((i) => i.id === id);
+      if (item && item.quantity <= 1) return prevCart.filter((i) => i.id !== id);
+      return prevCart.map((i) => i.id === id ? { ...i, quantity: i.quantity - 1 } : i);
+    });
   };
 
   const handleSaveQuotation = () => {
@@ -242,48 +468,30 @@ function BillingSection({ products = [], cart = [], setCart }) {
     setAppliedCoupon(quotation.coupon ?? null);
     setCouponCode('');
     setCouponError('');
+    setOtpValue('');
+    setOtpError('');
     setIsQuotationListOpen(false);
     focusSearchInput();
   };
 
-  const handleAddFromSearch = (product) => {
-    if (!invoiceNumber) {
-      alert('Please add a customer before adding items.');
-      return;
+  // Display-only — peeks the next number from the backend, doesn't spend it.
+  // If the sale is never completed, the counter is never touched.
+  const handleCustomerAdded = async (customer) => {
+    setSelectedCustomer(customer);
+    const nextInvoiceNumber = await peekInvoiceNumber();
+    setInvoiceNumber(nextInvoiceNumber);
+    setIsCustomerWindowOpen(false);
+    setCouponCode('');
+    setAppliedCoupon(null);
+    setCouponError('');
+    setOtpValue('');
+    setOtpError('');
+    try {
+      localStorage.removeItem('verifiedCoupon_pending');
+    } catch (storageErr) {
+      console.error('Failed to clear pending verified coupon from localStorage:', storageErr);
     }
-    const salePrice = Number(product.retailSalePrice) || 0;
-    const mrp = Number(product.mrp) || 0;
-    const cgst = Number(product.cgst) || 0;
-    const sgst = Number(product.sgst) || 0;
-    // Normalize HSN field: product master may send it as HSNCode or hsnCode.
-    const hsn = product.HSNCode ?? product.hsnCode ?? '-';
-
-    setCart((prevCart) => {
-      const existing = prevCart.find((item) => item.id === product.id);
-      if (existing) {
-        return prevCart.map((item) =>
-          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
-        );
-      }
-      return [
-        ...prevCart,
-        { id: product.id, name: product.productName, price: salePrice, mrp, cgst, sgst, barcode: product.barcode, hsn, quantity: 1 }
-      ];
-    });
-    setItemSearchTerm('');
     focusSearchInput();
-  };
-
-  const increaseCount = (id) => {
-    setCart(cart.map(item => item.id === id ? { ...item, quantity: item.quantity + 1 } : item));
-  };
-
-  const decreaseCount = (id) => {
-    setCart((prevCart) => {
-      const item = prevCart.find((i) => i.id === id);
-      if (item && item.quantity <= 1) return prevCart.filter((i) => i.id !== id);
-      return prevCart.map((i) => i.id === id ? { ...i, quantity: i.quantity - 1 } : i);
-    });
   };
 
   const searchResults = itemSearchTerm.trim() === ''
@@ -298,6 +506,9 @@ function BillingSection({ products = [], cart = [], setCart }) {
   };
 
   // ── Amounts ──
+  // item.price already has any coupon discount baked in (see the repricing
+  // effect above), so totalAmount here is the post-coupon total — no
+  // separate "subtract the coupon" step needed anywhere below.
   const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const taxableAmount = cart.reduce((sum, item) => {
     const itemTotal = item.price * item.quantity;
@@ -309,14 +520,16 @@ function BillingSection({ products = [], cart = [], setCart }) {
     return sum + (itemTaxable * (item.cgst / 100) * 2);
   }, 0);
 
+  // Total coupon discount, purely for display in the "Coupon Discount" row
+  // and the applied-coupon badge — derived from originalPrice vs the
+  // current (coupon-adjusted) price, not tracked as separate state.
+  const totalCouponDiscount = cart.reduce((sum, item) => {
+    const originalPrice = item.originalPrice ?? item.price;
+    return sum + Math.max(originalPrice - item.price, 0) * item.quantity;
+  }, 0);
+
   const safeDiscount = Math.min(Math.max(Number(discount) || 0, 0), totalAmount);
-  // Coupon discount is capped so it can't push the payable amount below zero
-  // even after the manual discount above has already been applied.
-  const safeCouponDiscount = Math.min(
-    appliedCoupon?.discountAmount ?? 0,
-    Math.max(totalAmount - safeDiscount, 0)
-  );
-  const payableAmount = totalAmount - safeDiscount - safeCouponDiscount;
+  const payableAmount = totalAmount - safeDiscount;
 
   const currentPayments = paymentsByInvoice[invoiceNumber] ?? [];
   const amountPaid = currentPayments.reduce((sum, p) => sum + p.amount, 0);
@@ -328,8 +541,16 @@ function BillingSection({ products = [], cart = [], setCart }) {
   // ── Finalize sale: call API, then show receipt, then reset everything ──
   const handlePaymentComplete = async () => {
 
+    // A customer-locked coupon must clear OTP before the sale is finalized —
+    // otherwise RedeemCoupon would just reject it later with nothing written.
+    if (appliedCoupon?.requiresOtp && !appliedCoupon?.verified) {
+      setTransactionError('Verify the coupon OTP before completing the sale.');
+      return;
+    }
+
     setIsSubmittingTransaction(true);
     setTransactionError('');
+    setPostSaleWarning('');
 
     // ── Pull the logged-in counter's ID from localStorage (set at login) ──
     const counterId = localStorage.getItem('counterId');
@@ -350,16 +571,16 @@ function BillingSection({ products = [], cart = [], setCart }) {
       totalAmount,
       // Combined manual + coupon discount, since the backend only tracks a
       // single discount figure per transaction.
-      discount: safeDiscount + safeCouponDiscount,
+      discount: safeDiscount + totalCouponDiscount,
       couponCode: appliedCoupon?.code ?? null,
       payableAmount,
       counterId: Number(counterId),
       items: cart.map((item) => {
         const mrp = Number(item.mrp) || item.price;
-        // Same per-line discount convention used everywhere else in the UI
-        // (product cards, cart rows, invoice receipt): the gap between MRP
-        // and the actual sale price, scaled by quantity. Sent explicitly so
-        // the backend stores exactly what the customer was shown at
+        // item.price is already fully discounted (product's own discount +
+        // any coupon share, both baked in by the repricing effect above),
+        // so the per-line discount is simply mrp - price. Sent explicitly
+        // so the backend stores exactly what the customer was shown at
         // checkout, rather than falling back to its own derivation.
         const itemDiscount = Math.max(mrp - item.price, 0) * item.quantity;
         return {
@@ -405,7 +626,7 @@ function BillingSection({ products = [], cart = [], setCart }) {
         customerName,
         items: cart,
         totalAmount,
-        discount: safeDiscount + safeCouponDiscount,
+        discount: safeDiscount + totalCouponDiscount,
         taxAmount,
         payableAmount
       });
@@ -415,7 +636,29 @@ function BillingSection({ products = [], cart = [], setCart }) {
         customerName,
         message: invoiceMessage
       });
+
+      // ── Redeem the coupon now that the sale has actually gone through ──
+      // Only fires if a coupon is applied AND it's verified — true already
+      // for an open coupon (RequiresOtp was false), or true because
+      // handleVerifyOtp flipped it after a successful OTP check. If a
+      // customer-locked coupon somehow reached here unverified, skip the
+      // call rather than send verified:false (RedeemCoupon rejects that
+      // outright with nothing written, so there'd be no point).
+      if (appliedCoupon?.verified) {
+        const redemption = await redeemAppliedCoupon();
+        if (!redemption.success) {
+          console.error('Coupon redemption failed after sale completed:', redemption.message);
+          setPostSaleWarning(
+            `Sale completed, but the coupon "${appliedCoupon.code}" could not be redeemed: ${redemption.message}`
+          );
+        }
+      }
+
       // ── Success: prepare receipt data before clearing state ──
+      // `cart` here already carries the coupon-adjusted `price`/`mrp` per
+      // item (from the repricing effect above), so InvoiceBill's own
+      // mrp - price math for "Disc.Amt" will show the real discount
+      // instead of ₹0.00.
       console.log("Cart before printing:", cart);
       setCompletedInvoice({
         invoiceNumber: finalizedInvoiceNumber,
@@ -423,7 +666,7 @@ function BillingSection({ products = [], cart = [], setCart }) {
         cart,
         totalAmount,
         discount: safeDiscount,
-        couponDiscount: safeCouponDiscount,
+        couponDiscount: totalCouponDiscount,
         couponCode: appliedCoupon?.code ?? null,
         taxAmount,
         payableAmount,
@@ -463,6 +706,11 @@ function BillingSection({ products = [], cart = [], setCart }) {
 
   // ── Called when the receipt modal is closed — reset for a brand new sale ──
   const handleCloseReceipt = () => {
+    try {
+      localStorage.removeItem(`verifiedCoupon_${invoiceNumber ?? 'pending'}`);
+    } catch (storageErr) {
+      console.error('Failed to clear verified coupon from localStorage:', storageErr);
+    }
     setCompletedInvoice(null);
     setCart([]);
     setSelectedCustomer(null);
@@ -470,6 +718,9 @@ function BillingSection({ products = [], cart = [], setCart }) {
     setCouponCode('');
     setAppliedCoupon(null);
     setCouponError('');
+    setOtpValue('');
+    setOtpError('');
+    setPostSaleWarning('');
     focusSearchInput();
   };
 
@@ -532,9 +783,11 @@ function BillingSection({ products = [], cart = [], setCart }) {
         </h3>
         {cart.length === 0 && <p className="bs-empty-text">Cart is empty.</p>}
         {cart.map((product, index) => {
+          // product.price already reflects any coupon discount (baked in
+          // by the repricing effect above), so this is just mrp - price —
+          // no separate coupon math needed here.
           const mrp = Number(product.mrp) || product.price;
-          const unitDiscount = Math.max(mrp - product.price, 0);
-          const itemDiscount = unitDiscount * product.quantity;
+          const itemDiscount = Math.max(mrp - product.price, 0) * product.quantity;
           const saleValue = product.price * product.quantity;
           const isLatest = index === cart.length - 1;
           return (
@@ -577,14 +830,42 @@ function BillingSection({ products = [], cart = [], setCart }) {
         <div className="bs-coupon-container">
           <h3 className="bs-section-title">Coupon Code</h3>
           {appliedCoupon ? (
-            <div className="bs-coupon-applied-row">
-              <span className="bs-coupon-applied-text">
-                "{appliedCoupon.code}" applied — ₹{appliedCoupon.discountAmount.toFixed(2)} off
-              </span>
-              <button className="bs-coupon-remove-button" onClick={handleRemoveCoupon}>
-                Remove
-              </button>
-            </div>
+            appliedCoupon.requiresOtp && !appliedCoupon.verified ? (
+              <div className="bs-coupon-otp-row">
+                <span className="bs-coupon-applied-text">
+                  "{appliedCoupon.code}" — OTP sent to the customer, verify to apply ₹{totalCouponDiscount.toFixed(2)} off
+                </span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Enter OTP"
+                  value={otpValue}
+                  onChange={(e) => setOtpValue(e.target.value)}
+                  className="bs-coupon-input"
+                  disabled={isVerifyingOtp}
+                />
+                <button
+                  className="bs-coupon-apply-button"
+                  onClick={handleVerifyOtp}
+                  disabled={isVerifyingOtp}
+                >
+                  {isVerifyingOtp ? 'Verifying...' : 'Verify OTP'}
+                </button>
+                <button className="bs-coupon-remove-button" onClick={handleRemoveCoupon}>
+                  Remove
+                </button>
+                {otpError && <p className="bs-error-text">{otpError}</p>}
+              </div>
+            ) : (
+              <div className="bs-coupon-applied-row">
+                <span className="bs-coupon-applied-text">
+                  "{appliedCoupon.code}" applied — ₹{totalCouponDiscount.toFixed(2)} off
+                </span>
+                <button className="bs-coupon-remove-button" onClick={handleRemoveCoupon}>
+                  Remove
+                </button>
+              </div>
+            )
           ) : (
             <div className="bs-coupon-row">
               <input
@@ -626,10 +907,10 @@ function BillingSection({ products = [], cart = [], setCart }) {
             />
           </div>
 
-          {safeCouponDiscount > 0 && (
+          {totalCouponDiscount > 0 && (
             <div className="bs-summary-row">
               <span>Coupon Discount:</span>
-              <span>-₹{safeCouponDiscount.toFixed(2)}</span>
+              <span>-₹{totalCouponDiscount.toFixed(2)}</span>
             </div>
           )}
 
@@ -658,7 +939,7 @@ function BillingSection({ products = [], cart = [], setCart }) {
         <button
           className="bs-primary-button bs-primary-button--payment"
           onClick={() => setIsPaymentWindowOpen(true)}
-          disabled={!invoiceNumber || cart.length === 0}
+          disabled={!invoiceNumber || cart.length === 0 || (appliedCoupon?.requiresOtp && !appliedCoupon?.verified)}
         >
           Payment
         </button>
@@ -690,6 +971,10 @@ function BillingSection({ products = [], cart = [], setCart }) {
 
       {completedInvoice && (
         <InvoiceBill invoice={completedInvoice} onClose={handleCloseReceipt} />
+      )}
+
+      {postSaleWarning && (
+        <p className="bs-error-text bs-post-sale-warning">{postSaleWarning}</p>
       )}
 
     </aside>

@@ -74,6 +74,7 @@ function normalizeCoupon(raw) {
     discountPercentage: raw.discountPercentage ?? raw.DiscountPercentage ?? 0,
     discountAmount: raw.discountAmount ?? raw.DiscountAmount ?? 0,
     minSpendAmount: raw.minSpendAmount ?? raw.MinSpendAmount ?? 0,
+    minSpendToGetCoupon: raw.minSpendToGetCoupon ?? raw.MinSpendToGetCoupon ?? 0,
     issuingLastdate: raw.issuingLastdate ?? raw.IssuingLastdate,
     expiryDate: raw.expiryDate ?? raw.ExpiryDate,
     couponType: raw.couponTypeId ?? raw.CouponTypeId ?? raw.couponType ?? raw.CouponType,
@@ -100,6 +101,7 @@ function couponToFormState(coupon) {
     discountPercentage: coupon.discountPercentage ?? 0,
     discountAmount: coupon.discountAmount ?? 0,
     minSpendAmount: coupon.minSpendAmount ?? 0,
+    minSpendToGetCoupon: coupon.minSpendToGetCoupon ?? 0,
     issuingLastdate: toDateInputValue(coupon.issuingLastdate),
     expiryDate: toDateInputValue(coupon.expiryDate),
     templateId: coupon.templateId ?? '',
@@ -414,6 +416,7 @@ function GetCoupon({ onCancel }) {
         discountPercentage: Number(editForm.discountPercentage) || 0,
         discountAmount: Number(editForm.discountAmount) || 0,
         minSpendAmount: Number(editForm.minSpendAmount) || 0,
+        minSpendToGetCoupon: Number(editForm.minSpendToGetCoupon) || 0,
         issuingLastdate: editForm.issuingLastdate
           ? new Date(editForm.issuingLastdate).toISOString()
           : null,
@@ -543,6 +546,9 @@ function GetCoupon({ onCancel }) {
                   <span className="gc-card__type">{typeLabel}</span>
                   <div className="gc-card__meta">
                     {coupon.minSpendAmount > 0 && <span>Min spend ₹{coupon.minSpendAmount}</span>}
+                    {coupon.minSpendToGetCoupon > 0 && (
+                      <span>Min spend to get coupon ₹{coupon.minSpendToGetCoupon}</span>
+                    )}
                     <span>Issue Till {formatDate(coupon.issuingLastdate)}</span>
                     <span>Valid till {formatDate(coupon.expiryDate)}</span>
                   </div>
@@ -742,6 +748,16 @@ function GetCoupon({ onCancel }) {
                   min="0"
                   value={editForm.minSpendAmount}
                   onChange={(e) => updateEditField('minSpendAmount', e.target.value)}
+                />
+              </div>
+              <div className="gc-field">
+                <label htmlFor="gc-edit-min-spend-to-get">Min spend to get coupon ₹</label>
+                <input
+                  id="gc-edit-min-spend-to-get"
+                  type="number"
+                  min="0"
+                  value={editForm.minSpendToGetCoupon}
+                  onChange={(e) => updateEditField('minSpendToGetCoupon', e.target.value)}
                 />
               </div>
             </div>
