@@ -7,7 +7,6 @@ import {
   Eye,
   Pencil,
   Trash2,
-  CopyPlus,
   PlusCircle,
   X,
   Loader2,
@@ -24,6 +23,12 @@ import { baseDesign } from '../TemplateLibrary/lib/design'
 
 // Adjust if your API is mounted elsewhere / behind a different host.
 const API_BASE = 'https://dummypossetup.runasp.net'
+
+// Coupon type id that represents a shared/counted "physical" coupon (see
+// CouponRedemptionController.RedeemCoupon, which branches on
+// `CouponType == 1` to decrement CouponCount). Only coupons of this type
+// support adding more physical codes via AddPhysicalCoupon.
+const PHYSICAL_COUPON_TYPE_ID = 1
 
 // Calls the backend's GetCouponUi, which returns the template's config
 // with the coupon's name + expiry already substituted server-side.
@@ -213,7 +218,8 @@ function GetCoupon({ onCancel }) {
   // Add Physical Coupon: CouponId is auto-filled from the row the person
   // clicked (read-only), couponCount and couponUniqueCode are inputs.
   // couponUniqueCode is optional — leaving it blank lets the backend
-  // generate one.
+  // generate one. Only offered for PHYSICAL_COUPON_TYPE_ID coupons (see
+  // the action button rendering below).
   const [physicalCoupon, setPhysicalCoupon] = useState(null)
   const [physicalForm, setPhysicalForm] = useState(null) // { couponCount, couponUniqueCode }
   const [physicalSaving, setPhysicalSaving] = useState(false)
@@ -303,27 +309,11 @@ function GetCoupon({ onCancel }) {
     }
   }
 
-  // --- Duplicate (add a copy into the main coupon database) -------------
-  const handleDuplicate = async (coupon) => {
-    setBusy(coupon.id, 'duplicate')
-    try {
-      const res = await fetch(
-        `${API_BASE}/api/Coupon/DuplicateCoupon/${coupon.id}`,
-        { method: 'POST' }
-      )
-      if (!res.ok) throw new Error(`Could not add a copy (${res.status}).`)
-      const json = unwrapEnvelope(await res.json())
-      setCoupons((cur) => [normalizeCoupon(json), ...cur])
-      showBanner('success', `Added a copy of "${coupon.name}".`)
-    } catch (err) {
-      showBanner('error', err.message || 'Could not add a copy of this coupon.')
-    } finally {
-      clearBusy(coupon.id)
-    }
-  }
-
   // --- Add Physical Coupon -------------------------------------------------
+  // Only ever opened for PHYSICAL_COUPON_TYPE_ID coupons — the action
+  // button that calls this is hidden for any other coupon type.
   const openAddPhysical = (coupon) => {
+    if (coupon.couponType !== PHYSICAL_COUPON_TYPE_ID) return
     setPhysicalCoupon(coupon)
     setPhysicalForm({ couponCount: 1, couponUniqueCode: '' })
     setPhysicalError(null)
@@ -526,6 +516,7 @@ function GetCoupon({ onCancel }) {
               coupon.couponTypeName || couponTypeNameById.get(coupon.couponType) || 'Coupon'
             const busyAction = rowBusy[coupon.id]
             const hasCachedDesign = coupon.id in couponDesignCache
+            const isPhysicalType = coupon.couponType === PHYSICAL_COUPON_TYPE_ID
 
             return (
               <li key={coupon.id} className="gc-card">
@@ -587,29 +578,17 @@ function GetCoupon({ onCancel }) {
                   >
                     <Pencil size={16} strokeWidth={2.25} />
                   </button>
-                  <button
-                    type="button"
-                    className="gc-card__action"
-                    onClick={() => handleDuplicate(coupon)}
-                    disabled={busyAction === 'duplicate'}
-                    aria-label={`Add a copy of ${coupon.name} to the database`}
-                    title="Add a copy to the database"
-                  >
-                    {busyAction === 'duplicate' ? (
-                      <Loader2 size={16} strokeWidth={2.25} className="gc-spin" />
-                    ) : (
-                      <CopyPlus size={16} strokeWidth={2.25} />
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    className="gc-card__action"
-                    onClick={() => openAddPhysical(coupon)}
-                    aria-label={`Add physical coupons for ${coupon.name}`}
-                    title="Add physical coupons"
-                  >
-                    <PlusCircle size={16} strokeWidth={2.25} />
-                  </button>
+                  {isPhysicalType && (
+                    <button
+                      type="button"
+                      className="gc-card__action"
+                      onClick={() => openAddPhysical(coupon)}
+                      aria-label={`Add physical coupons for ${coupon.name}`}
+                      title="Add physical coupons"
+                    >
+                      <PlusCircle size={16} strokeWidth={2.25} />
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="gc-card__action gc-card__action--danger"

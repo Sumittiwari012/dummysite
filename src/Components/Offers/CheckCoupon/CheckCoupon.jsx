@@ -3,8 +3,18 @@
 // resolves and the toolbar/search styling matches the rest of the Coupon
 // Voucher flow.
 import '../GetCoupon/GetCoupon.css'
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { RefreshCw, Search, TicketX, Loader2 } from 'lucide-react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { RefreshCw, Search, TicketX, Loader2, Eye, X, Download } from 'lucide-react'
+import _ from 'lodash'
+// npm install html2canvas — used to rasterize the preview for download,
+// since VoucherCanvas's exact DOM output (SVG vs plain HTML) isn't known
+// here; capturing the rendered node works either way.
+import html2canvas from 'html2canvas'
+// Same renderer + default design shape GetCoupon.jsx uses for its preview.
+// Adjust this path if CheckCoupon.jsx ends up at a different depth than
+// GetCoupon.jsx relative to TemplateLibrary.
+import { VoucherCanvas } from '../TemplateLibrary/components/VoucherCanvas'
+import { baseDesign } from '../TemplateLibrary/lib/design'
 
 // Adjust if your API is mounted elsewhere / behind a different host.
 const API_BASE = 'https://dummypossetup.runasp.net'
@@ -47,6 +57,95 @@ function formatCellValue(value) {
   return String(value)
 }
 
+// Pulls the fields the preview needs out of a row whose exact shape comes
+// straight from GetCouponAssignment (unlike GetCoupon's rows, these are
+// never passed through a normalizer). Confirmed shape from the live
+// endpoint: { couponId, templateID (capital ID), couponName, couponType,
+// couponExpiryDate, contactNumberAssigned, couponUniqueCode, couponCount }
+// — note there's no discount info on this row, so the medallion below
+// falls back to whatever GetCouponUi's template already has baked in.
+function extractPreviewFields(row) {
+  const couponId = row.couponId ?? row.CouponId ?? row.id ?? row.Id
+  const templateId = row.templateID ?? row.templateId ?? row.TemplateID ?? row.TemplateId
+  const name = row.couponName ?? row.CouponName ?? row.name ?? row.Name
+  const discountPercentage = Number(row.discountPercentage ?? row.DiscountPercentage) || 0
+  const discountAmount = Number(row.discountAmount ?? row.DiscountAmount) || 0
+  // The value scanned off the QR/barcode/code-text defaults to this
+  // coupon's own unique code, e.g. "FIRST50".
+  const couponUniqueCode = row.couponUniqueCode ?? row.CouponUniqueCode ?? ''
+  return { couponId, templateId, name, discountPercentage, discountAmount, couponUniqueCode }
+}
+
+// localStorage key for a per-coupon override of the value encoded into
+// its QR / barcode / code-text elements. Kept separate from the design
+// cache (which is in-memory only) since this is meant to persist.
+function codeValueStorageKey(couponId) {
+  return `checkCoupon_codeValue_${couponId}`
+}
+
+// Layers a single scan value onto whichever of qr / barcode / qrText
+// blocks actually exist on this design, without touching anything else.
+// A block that isn't present on the design (e.g. a template with no
+// barcode at all) is left untouched rather than being invented.
+function withCodeValue(design, value) {
+  if (!design || !value) return design
+  return {
+    ...design,
+    qr: design.qr ? { ...design.qr, value } : design.qr,
+    barcode: design.barcode ? { ...design.barcode, value } : design.barcode,
+    qrText: design.qrText ? { ...design.qrText, value } : design.qrText,
+  }
+}
+
+// Same call GetCoupon.jsx makes: GetCouponUi returns the template's config
+// with the coupon's name + expiry already substituted server-side, merged
+// over baseDesign() so any field an older template is missing falls back
+// to a sane default.
+async function fetchCouponUiDesign(couponId, templateId) {
+  const res = await fetch(
+    `${API_BASE}/api/Coupon/GetCouponUi?couponId=${couponId}&templateId=${templateId}`
+  )
+  if (!res.ok) throw new Error(`Failed to load coupon artwork (${res.status}).`)
+  const config = unwrapEnvelope(await res.json())
+
+  const merged = _.merge(baseDesign(), config || {})
+  merged.id = String(templateId)
+  return merged
+}
+
+// Same overrides GetCoupon.jsx layers on top of a GetCouponUi design: the
+// discount medallion, QR payload, and corner flag text. `design` is never
+// mutated.
+function applyCouponOverrides(design, preview) {
+  if (!design) return null
+
+  const discountLabel =
+    preview.discountPercentage > 0
+      ? `${preview.discountPercentage}%`
+      : preview.discountAmount > 0
+      ? `₹${preview.discountAmount}`
+      : design.medallion?.value
+
+  return {
+    ...design,
+    medallion: design.medallion && { ...design.medallion, value: discountLabel },
+    headline: design.headline && {
+      ...design.headline,
+      text: preview.name ? preview.name.toUpperCase() : design.headline.text,
+    },
+    qr: design.qr && {
+      ...design.qr,
+      value: preview.name
+        ? `${design.qr.value}${design.qr.value.includes('?') ? '&' : '?'}code=${encodeURIComponent(preview.name)}`
+        : design.qr.value,
+    },
+    cornerFlag: design.cornerFlag && {
+      ...design.cornerFlag,
+      text: preview.name ? preview.name.toUpperCase() : design.cornerFlag.text,
+    },
+  }
+}
+
 function CheckCoupon({ onCancel }) {
   // Rows are kept exactly as the backend sends them — no per-field
   // normalization — so the table always reflects whatever shape
@@ -56,6 +155,115 @@ function CheckCoupon({ onCancel }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [query, setQuery] = useState('')
+
+  // --- Preview (same pattern as GetCoupon.jsx) --------------------------
+  const [previewRow, setPreviewRow] = useState(null)
+  // Cached/keyed by couponId, same as GetCoupon.jsx — the GetCouponUi
+  // response has that specific coupon's name/expiry baked in server-side,
+  // so it can't be shared across coupons. In-memory only.
+  const [designCache, setDesignCache] = useState({}) // { [couponId]: design }
+  const [designStatus, setDesignStatus] = useState({}) // { [couponId]: 'loading' | 'error' }
+
+  const ensureDesign = useCallback(
+    async (preview) => {
+      if (preview.couponId == null || preview.templateId == null) return
+      if (designCache[preview.couponId] || designStatus[preview.couponId] === 'loading') return
+
+      setDesignStatus((cur) => ({ ...cur, [preview.couponId]: 'loading' }))
+      try {
+        const design = await fetchCouponUiDesign(preview.couponId, preview.templateId)
+        setDesignCache((cur) => ({ ...cur, [preview.couponId]: design }))
+        setDesignStatus((cur) => {
+          const next = { ...cur }
+          delete next[preview.couponId]
+          return next
+        })
+      } catch {
+        setDesignStatus((cur) => ({ ...cur, [preview.couponId]: 'error' }))
+      }
+    },
+    [designCache, designStatus]
+  )
+
+  const openPreview = (row) => {
+    const preview = extractPreviewFields(row)
+    setPreviewRow(preview)
+    ensureDesign(preview)
+  }
+  const closePreview = () => {
+    setPreviewRow(null)
+    setDownloadError('')
+  }
+
+  // --- Scan value (QR / barcode / code text) ----------------------------
+  // The value the person sees/edits and that gets baked into whichever of
+  // qr/barcode/qrText the current design actually has. Defaults to a
+  // previously-saved override (localStorage) if one exists, otherwise to
+  // the coupon's own couponUniqueCode.
+  const [codeValue, setCodeValue] = useState('')
+
+  useEffect(() => {
+    if (!previewRow) return
+    const design = designCache[previewRow.couponId]
+    if (!design) return
+    let stored = null
+    try {
+      stored = localStorage.getItem(codeValueStorageKey(previewRow.couponId))
+    } catch {
+      stored = null
+    }
+    setCodeValue(stored ?? previewRow.couponUniqueCode ?? design.qr?.value ?? '')
+  }, [previewRow, designCache])
+
+  const handleCodeValueChange = (value) => {
+    setCodeValue(value)
+    if (!previewRow) return
+    try {
+      localStorage.setItem(codeValueStorageKey(previewRow.couponId), value)
+    } catch (err) {
+      console.error('Failed to persist coupon code value to localStorage:', err)
+    }
+  }
+
+  // --- Download the previewed artwork as a PNG ---------------------------
+  const artRef = useRef(null)
+  const [isDownloading, setIsDownloading] = useState(false)
+
+  const handleDownloadPreview = async () => {
+    if (!artRef.current) return
+    setIsDownloading(true)
+    try {
+      const canvas = await html2canvas(artRef.current, {
+        backgroundColor: '#FFFFFF',
+        scale: 2, // sharper output than the on-screen size
+        useCORS: true, // template images (medallion art, etc.) may be cross-origin
+      })
+      const dataUrl = canvas.toDataURL('image/png')
+      const fileNameBase = (previewRow?.name || previewRow?.couponUniqueCode || 'coupon')
+        .toString()
+        .trim()
+        .replace(/\s+/g, '_')
+      const link = document.createElement('a')
+      link.href = dataUrl
+      link.download = `${fileNameBase}.png`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    } catch (err) {
+      console.error('Failed to download coupon preview:', err)
+      showDownloadError()
+    } finally {
+      setIsDownloading(false)
+    }
+  }
+
+  // Small transient banner-less error, since there's no existing banner
+  // wiring inside the preview modal — just an inline note under the button.
+  const [downloadError, setDownloadError] = useState('')
+  const showDownloadError = () => {
+    setDownloadError('Could not download the image. Please try again.')
+    setTimeout(() => setDownloadError((cur) => (cur ? '' : cur)), 3200)
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -144,6 +352,7 @@ function CheckCoupon({ onCancel }) {
                 {columns.map((col) => (
                   <th key={col}>{humanizeKey(col)}</th>
                 ))}
+                <th>Preview</th>
               </tr>
             </thead>
             <tbody>
@@ -152,10 +361,100 @@ function CheckCoupon({ onCancel }) {
                   {columns.map((col) => (
                     <td key={col}>{formatCellValue(row[col])}</td>
                   ))}
+                  <td>
+                    <button
+                      type="button"
+                      className="cc-view-button"
+                      onClick={() => openPreview(row)}
+                      aria-label="View coupon"
+                      title="View coupon"
+                    >
+                      <Eye size={16} strokeWidth={2.25} />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {previewRow && (
+        <div className="gc-overlay" onClick={closePreview}>
+          <div className="gc-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="gc-modal__head">
+              <h3>{previewRow.name || 'Coupon'}</h3>
+              <div className="cc-modal-head-actions">
+                <button
+                  type="button"
+                  className="cc-download-button"
+                  onClick={handleDownloadPreview}
+                  disabled={isDownloading}
+                  aria-label="Download coupon image"
+                  title="Download as PNG"
+                >
+                  {isDownloading ? (
+                    <Loader2 size={16} strokeWidth={2.25} className="gc-spin" />
+                  ) : (
+                    <Download size={16} strokeWidth={2.25} />
+                  )}
+                  {isDownloading ? 'Downloading…' : 'Download'}
+                </button>
+                <button type="button" className="gc-modal__close" onClick={closePreview} aria-label="Close preview">
+                  <X size={18} strokeWidth={2.25} />
+                </button>
+              </div>
+            </div>
+            {downloadError && <p className="cc-download-error">{downloadError}</p>}
+            {(() => {
+              if (previewRow.couponId == null || previewRow.templateId == null) {
+                return <div className="gc-art-error">No artwork available for this coupon.</div>
+              }
+              const status = designStatus[previewRow.couponId]
+              const design = designCache[previewRow.couponId]
+              if (status === 'loading') return <div className="gc-art-skel" />
+              if (status === 'error') {
+                return <div className="gc-art-error">Couldn't load the coupon artwork.</div>
+              }
+              if (!design) return null
+
+              const qrVisible = !!design.qr?.visible
+              const barcodeVisible = !!design.barcode?.visible
+              const qrTextVisible = !!design.qrText?.visible
+              const anyCodeVisible = qrVisible || barcodeVisible || qrTextVisible
+
+              const codeSourceLabels = [
+                qrVisible && 'QR code',
+                barcodeVisible && 'barcode',
+                qrTextVisible && 'code text',
+              ].filter(Boolean)
+
+              const overridden = applyCouponOverrides(design, previewRow)
+              const merged = withCodeValue(overridden, codeValue)
+
+              return (
+                <>
+                  {anyCodeVisible && (
+                    <div className="cc-code-value-row">
+                      <label htmlFor="cc-code-value">
+                        Scan value ({codeSourceLabels.join(', ')})
+                      </label>
+                      <input
+                        id="cc-code-value"
+                        type="text"
+                        value={codeValue}
+                        onChange={(e) => handleCodeValueChange(e.target.value)}
+                        placeholder="Value encoded when this is scanned"
+                      />
+                    </div>
+                  )}
+                  <div className="gc-art" ref={artRef}>
+                    <VoucherCanvas design={merged} />
+                  </div>
+                </>
+              )
+            })()}
+          </div>
         </div>
       )}
 
@@ -210,6 +509,88 @@ function CheckCoupon({ onCancel }) {
 
         .cc-table tbody tr:hover {
           background: #FAF9FD;
+        }
+
+        .cc-view-button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 30px;
+          height: 30px;
+          border-radius: 8px;
+          border: 1px solid #E4E1EE;
+          background: #FFFFFF;
+          color: #6B667F;
+          cursor: pointer;
+        }
+
+        .cc-view-button:hover {
+          background: #F6F5FA;
+          color: #1C1A24;
+        }
+
+        .cc-code-value-row {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          margin: 0 0 14px;
+        }
+
+        .cc-code-value-row label {
+          font-size: 12px;
+          font-weight: 600;
+          color: #6B667F;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+        }
+
+        .cc-code-value-row input {
+          padding: 9px 12px;
+          border: 1px solid #E4E1EE;
+          border-radius: 8px;
+          font-size: 14px;
+          color: #1C1A24;
+          background: #FFFFFF;
+        }
+
+        .cc-code-value-row input:focus {
+          outline: none;
+          border-color: #B9762E;
+        }
+
+        .cc-modal-head-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .cc-download-button {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 7px 12px;
+          border-radius: 8px;
+          border: 1px solid #E4E1EE;
+          background: #FFFFFF;
+          color: #1C1A24;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+
+        .cc-download-button:hover {
+          background: #F6F5FA;
+        }
+
+        .cc-download-button:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .cc-download-error {
+          margin: 0 0 12px;
+          font-size: 13px;
+          color: #B3261E;
         }
 
         @media (min-width: 780px) {
