@@ -217,11 +217,18 @@ function GetCoupon({ onCancel }) {
 
   // Add Physical Coupon: CouponId is auto-filled from the row the person
   // clicked (read-only), couponCount and couponUniqueCode are inputs.
-  // couponUniqueCode is optional — leaving it blank lets the backend
-  // generate one. Only offered for PHYSICAL_COUPON_TYPE_ID coupons (see
-  // the action button rendering below).
+  // `single` controls which branch of the backend runs:
+  //   - single = true: one assignment row, CouponCount = couponCount,
+  //     CouponUniqueCode is whatever was typed (or blank to auto-generate
+  //     one shared code covering all `couponCount` redemptions).
+  //   - single = false: `couponCount` separate single-use rows, each with
+  //     CouponCount = 1 and its own backend-generated code — whatever was
+  //     typed into couponUniqueCode is ignored by the backend in this
+  //     mode, so the field is disabled to make that explicit.
+  // Only offered for PHYSICAL_COUPON_TYPE_ID coupons (see the action
+  // button rendering below).
   const [physicalCoupon, setPhysicalCoupon] = useState(null)
-  const [physicalForm, setPhysicalForm] = useState(null) // { couponCount, couponUniqueCode }
+  const [physicalForm, setPhysicalForm] = useState(null) // { couponCount, couponUniqueCode, single }
   const [physicalSaving, setPhysicalSaving] = useState(false)
   const [physicalError, setPhysicalError] = useState(null)
 
@@ -315,7 +322,7 @@ function GetCoupon({ onCancel }) {
   const openAddPhysical = (coupon) => {
     if (coupon.couponType !== PHYSICAL_COUPON_TYPE_ID) return
     setPhysicalCoupon(coupon)
-    setPhysicalForm({ couponCount: 1, couponUniqueCode: '' })
+    setPhysicalForm({ couponCount: 1, couponUniqueCode: '', single: true })
     setPhysicalError(null)
   }
   const closeAddPhysical = () => {
@@ -345,9 +352,15 @@ function GetCoupon({ onCancel }) {
       const params = new URLSearchParams({
         CouponId: String(physicalCoupon.id),
         couponCount: String(count),
+        single: String(physicalForm.single),
       })
-      const code = physicalForm.couponUniqueCode.trim()
-      if (code) params.set('CouponUniqueCode', code)
+      // Only meaningful in single mode — the backend ignores/ regenerates
+      // its own code per row when single is false, so there's no point
+      // sending whatever's left in the field from before a mode switch.
+      if (physicalForm.single) {
+        const code = physicalForm.couponUniqueCode.trim()
+        if (code) params.set('CouponUniqueCode', code)
+      }
 
       const res = await fetch(`${API_BASE}/api/CouponAssignment/AddPhysicalCoupon?${params.toString()}`, {
         method: 'POST',
@@ -360,7 +373,9 @@ function GetCoupon({ onCancel }) {
 
       showBanner(
         'success',
-        `Added ${count} physical coupon${count === 1 ? '' : 's'} for "${physicalCoupon.name}".`
+        physicalForm.single
+          ? `Added ${count} physical coupon${count === 1 ? '' : 's'} for "${physicalCoupon.name}".`
+          : `Created ${count} separate coupon${count === 1 ? '' : 's'} for "${physicalCoupon.name}".`
       )
       setPhysicalSaving(false)
       setPhysicalCoupon(null)
@@ -827,6 +842,34 @@ function GetCoupon({ onCancel }) {
               />
             </div>
 
+            <div className="gc-field">
+              <label>Entry type</label>
+              <div className="gc-physical-mode-row">
+                <label className="gc-physical-mode-option">
+                  <input
+                    type="radio"
+                    name="gc-physical-mode"
+                    checked={physicalForm.single === true}
+                    onChange={() => updatePhysicalField('single', true)}
+                  />
+                  <span>
+                    <strong>Single entry</strong> — one shared code, redeemable {physicalForm.couponCount || 'N'} times
+                  </span>
+                </label>
+                <label className="gc-physical-mode-option">
+                  <input
+                    type="radio"
+                    name="gc-physical-mode"
+                    checked={physicalForm.single === false}
+                    onChange={() => updatePhysicalField('single', false)}
+                  />
+                  <span>
+                    <strong>Multiple entries</strong> — {physicalForm.couponCount || 'N'} separate, single-use codes
+                  </span>
+                </label>
+              </div>
+            </div>
+
             <div className="gc-field-row">
               <div className="gc-field">
                 <label htmlFor="gc-physical-count">No. of coupons</label>
@@ -848,7 +891,12 @@ function GetCoupon({ onCancel }) {
                   type="text"
                   value={physicalForm.couponUniqueCode}
                   onChange={(e) => updatePhysicalField('couponUniqueCode', e.target.value)}
-                  placeholder="Leave blank to auto-generate"
+                  placeholder={
+                    physicalForm.single
+                      ? 'Leave blank to auto-generate'
+                      : 'Ignored — each entry gets its own code'
+                  }
+                  disabled={!physicalForm.single}
                 />
               </div>
             </div>
@@ -876,6 +924,35 @@ function GetCoupon({ onCancel }) {
           </form>
         </div>
       )}
+
+      <style>{`
+        .gc-physical-mode-row {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .gc-physical-mode-option {
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+          padding: 10px 12px;
+          border: 1px solid #E4E1EE;
+          border-radius: 8px;
+          cursor: pointer;
+          font-size: 13px;
+          color: #1C1A24;
+        }
+
+        .gc-physical-mode-option:has(input:checked) {
+          border-color: #B9762E;
+          background: #FBF3EA;
+        }
+
+        .gc-physical-mode-option input {
+          margin-top: 2px;
+        }
+      `}</style>
     </div>
   )
 }
