@@ -4,11 +4,12 @@
 // Voucher flow.
 import '../GetCoupon/GetCoupon.css'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { RefreshCw, Search, TicketX, Loader2, Eye, X, Download } from 'lucide-react'
+import { RefreshCw, Search, TicketX, Loader2, Eye, X, Download, ChevronDown, ChevronRight, Printer } from 'lucide-react'
 import _ from 'lodash'
-// npm install html2canvas — used to rasterize the preview for download,
-// since VoucherCanvas's exact DOM output (SVG vs plain HTML) isn't known
-// here; capturing the rendered node works either way.
+// npm install html2canvas — used to rasterize both the modal preview and
+// the per-row print artwork, since VoucherCanvas's exact DOM output (SVG
+// vs plain HTML) isn't known here; capturing the rendered node works
+// either way.
 import html2canvas from 'html2canvas'
 // Same renderer + default design shape GetCoupon.jsx uses for its preview.
 // Adjust this path if CheckCoupon.jsx ends up at a different depth than
@@ -83,6 +84,18 @@ function codeValueStorageKey(couponId) {
   return `checkCoupon_codeValue_${couponId}`
 }
 
+// Reads a coupon's persisted scan-value override, falling back to the
+// given value (e.g. its own couponUniqueCode) if nothing was saved, or if
+// localStorage isn't available.
+function getStoredCodeValue(couponId, fallback) {
+  try {
+    const stored = localStorage.getItem(codeValueStorageKey(couponId))
+    return stored ?? fallback
+  } catch {
+    return fallback
+  }
+}
+
 // Layers a single scan value onto whichever of qr / barcode / qrText
 // blocks actually exist on this design, without touching anything else.
 // A block that isn't present on the design (e.g. a template with no
@@ -146,6 +159,36 @@ function applyCouponOverrides(design, preview) {
   }
 }
 
+// Stable identifier for a row within its coupon-id group. Rows themselves
+// don't carry a guaranteed unique id (assignment rows can repeat contact
+// numbers etc.), so the key is the pair of (group, position-in-group) —
+// stable as long as `rows` isn't reordered between renders, same
+// assumption the existing `key={idx}` on <tr> already relies on.
+function rowKey(couponId, idxInGroup) {
+  return `${couponId}::${idxInGroup}`
+}
+
+// A checkbox that also drives its native `indeterminate` visual state
+// (some-but-not-all children selected) — plain <input checked> can't
+// express that on its own.
+function TriStateCheckbox({ checked, indeterminate, onChange, onClick, ariaLabel }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = !!indeterminate && !checked
+  }, [indeterminate, checked])
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={!!checked}
+      onChange={onChange}
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className="cc-checkbox"
+    />
+  )
+}
+
 function CheckCoupon({ onCancel }) {
   // Rows are kept exactly as the backend sends them — no per-field
   // normalization — so the table always reflects whatever shape
@@ -156,11 +199,60 @@ function CheckCoupon({ onCancel }) {
   const [error, setError] = useState(null)
   const [query, setQuery] = useState('')
 
+  // --- Selection (for printing) ------------------------------------------
+  // Set of rowKey(couponId, idxInGroup) strings. Kept independent of the
+  // preview/design state below — selecting rows for print doesn't need
+  // their artwork loaded up front (it's fetched on demand when printing).
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set())
+
+  const toggleRowSelected = (key) => {
+    setSelectedKeys((cur) => {
+      const next = new Set(cur)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const setGroupSelected = (group, shouldSelect) => {
+    setSelectedKeys((cur) => {
+      const next = new Set(cur)
+      group.rows.forEach((_row, idx) => {
+        const key = rowKey(group.couponId, idx)
+        if (shouldSelect) next.add(key)
+        else next.delete(key)
+      })
+      return next
+    })
+  }
+
+  const groupSelectionState = (group) => {
+    const total = group.rows.length
+    const selectedCount = group.rows.reduce(
+      (n, _row, idx) => n + (selectedKeys.has(rowKey(group.couponId, idx)) ? 1 : 0),
+      0
+    )
+    return {
+      all: total > 0 && selectedCount === total,
+      some: selectedCount > 0 && selectedCount < total,
+    }
+  }
+
+  const selectedCount = selectedKeys.size
+
+  const clearSelection = () => setSelectedKeys(new Set())
+
+  // Surfaced next to the Print button if window.open() gets blocked, or if
+  // artwork couldn't be prepared for any of the selected rows.
+  const [printError, setPrintError] = useState('')
+
   // --- Preview (same pattern as GetCoupon.jsx) --------------------------
   const [previewRow, setPreviewRow] = useState(null)
   // Cached/keyed by couponId, same as GetCoupon.jsx — the GetCouponUi
   // response has that specific coupon's name/expiry baked in server-side,
-  // so it can't be shared across coupons. In-memory only.
+  // so it can't be shared across coupons. In-memory only. Also reused by
+  // the print flow below so printing doesn't re-fetch artwork that's
+  // already been previewed.
   const [designCache, setDesignCache] = useState({}) // { [couponId]: design }
   const [designStatus, setDesignStatus] = useState({}) // { [couponId]: 'loading' | 'error' }
 
@@ -206,13 +298,7 @@ function CheckCoupon({ onCancel }) {
     if (!previewRow) return
     const design = designCache[previewRow.couponId]
     if (!design) return
-    let stored = null
-    try {
-      stored = localStorage.getItem(codeValueStorageKey(previewRow.couponId))
-    } catch {
-      stored = null
-    }
-    setCodeValue(stored ?? previewRow.couponUniqueCode ?? design.qr?.value ?? '')
+    setCodeValue(getStoredCodeValue(previewRow.couponId, previewRow.couponUniqueCode ?? design.qr?.value ?? ''))
   }, [previewRow, designCache])
 
   const handleCodeValueChange = (value) => {
@@ -278,6 +364,10 @@ function CheckCoupon({ onCancel }) {
       // JSON array of same-shaped objects — matches the order the backend
       // declared them in its projection.
       setColumns(list.length > 0 ? Object.keys(list[0]) : [])
+      // Row identities can shift after a refresh (new/removed assignments),
+      // so any previous print selection is no longer guaranteed to point
+      // at the same rows — drop it rather than risk printing the wrong ones.
+      setSelectedKeys(new Set())
     } catch (err) {
       setError(err.message || 'Something went wrong while loading created coupons.')
     } finally {
@@ -297,6 +387,221 @@ function CheckCoupon({ onCancel }) {
     )
   }, [rows, columns, query])
 
+  // --- Group rows by couponId (e.g. "Coupon 7" holding every assignment
+  // row for coupon id 7) ---------------------------------------------------
+  const groupedRows = useMemo(() => {
+    const map = new Map()
+    filtered.forEach((row) => {
+      const couponId = row.couponId ?? row.CouponId ?? row.id ?? row.Id ?? 'Unknown'
+      if (!map.has(couponId)) map.set(couponId, [])
+      map.get(couponId).push(row)
+    })
+    return Array.from(map.entries())
+      .map(([couponId, groupRows]) => ({
+        couponId,
+        rows: groupRows,
+        name: groupRows[0]?.couponName ?? groupRows[0]?.CouponName ?? null,
+      }))
+      .sort((a, b) => {
+        const na = Number(a.couponId)
+        const nb = Number(b.couponId)
+        if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb
+        return String(a.couponId).localeCompare(String(b.couponId))
+      })
+  }, [filtered])
+
+  // Which coupon-id groups are currently expanded. Starts empty (all
+  // collapsed) — clicking a group's header toggles just that group.
+  const [expandedCouponIds, setExpandedCouponIds] = useState(() => new Set())
+  const toggleGroup = (couponId) => {
+    setExpandedCouponIds((cur) => {
+      const next = new Set(cur)
+      if (next.has(couponId)) next.delete(couponId)
+      else next.add(couponId)
+      return next
+    })
+  }
+
+  // --- Print the selected rows as their voucher artwork -------------------
+  // Printing now renders each selected row's actual coupon image (the same
+  // VoucherCanvas design used in the preview modal) rather than a data
+  // table — one coupon image per printed page.
+  const [isPreparingPrint, setIsPreparingPrint] = useState(false)
+  // Queue of { key, name, design } rendered off-screen so html2canvas has
+  // real DOM nodes to rasterize. Cleared once the print window is opened.
+  const [printItems, setPrintItems] = useState([])
+  const printNodeRefs = useRef({})
+
+  const handlePrintSelected = async () => {
+    const selectedRows = []
+    groupedRows.forEach((group) => {
+      group.rows.forEach((row, idx) => {
+        if (selectedKeys.has(rowKey(group.couponId, idx))) selectedRows.push(row)
+      })
+    })
+    if (selectedRows.length === 0) return
+
+    setPrintError('')
+    setIsPreparingPrint(true)
+
+    try {
+      // Local copy so repeated coupon ids within the selection (multiple
+      // assignment rows for the same coupon) only fetch artwork once, and
+      // so we're not relying on React state updates landing between awaits.
+      const localDesignCache = { ...designCache }
+      const items = []
+
+      for (let i = 0; i < selectedRows.length; i++) {
+        const row = selectedRows[i]
+        const preview = extractPreviewFields(row)
+        if (preview.couponId == null || preview.templateId == null) continue
+
+        let design = localDesignCache[preview.couponId]
+        if (!design) {
+          try {
+            design = await fetchCouponUiDesign(preview.couponId, preview.templateId)
+            localDesignCache[preview.couponId] = design
+          } catch (err) {
+            console.error('Failed to load artwork for coupon', preview.couponId, err)
+            continue // skip rows whose artwork can't be loaded, print the rest
+          }
+        }
+
+        const overridden = applyCouponOverrides(design, preview)
+        const codeValueForRow = getStoredCodeValue(preview.couponId, preview.couponUniqueCode)
+        const merged = withCodeValue(overridden, codeValueForRow)
+
+        items.push({
+          key: `print-${rowKey(preview.couponId, i)}`,
+          name: preview.name || preview.couponUniqueCode || `Coupon ${preview.couponId}`,
+          design: merged,
+        })
+      }
+
+      // Fold any newly-fetched designs back into the shared cache so the
+      // preview modal doesn't have to re-fetch them later.
+      setDesignCache((cur) => ({ ...cur, ...localDesignCache }))
+
+      if (items.length === 0) {
+        setPrintError("Couldn't load artwork for the selected coupons.")
+        setIsPreparingPrint(false)
+        return
+      }
+
+      // Rendering + rasterizing happens in the effect below once these
+      // off-screen nodes have actually painted.
+      setPrintItems(items)
+    } catch (err) {
+      console.error('Failed to prepare coupons for print:', err)
+      setPrintError('Could not prepare the selected coupons for printing.')
+      setIsPreparingPrint(false)
+    }
+  }
+
+  // Once printItems are queued, wait a couple of frames for the off-screen
+  // VoucherCanvas nodes (and any images inside them) to paint, rasterize
+  // each one, then open a print window with one coupon image per page.
+  useEffect(() => {
+    if (printItems.length === 0) return
+    let cancelled = false
+
+    const run = async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+
+      const images = []
+      for (const item of printItems) {
+        const node = printNodeRefs.current[item.key]
+        if (!node) continue
+        try {
+          const canvas = await html2canvas(node, {
+            backgroundColor: '#FFFFFF',
+            scale: 2,
+            useCORS: true,
+          })
+          images.push({ name: item.name, dataUrl: canvas.toDataURL('image/png') })
+        } catch (err) {
+          console.error('Failed to rasterize coupon for print:', item.key, err)
+        }
+      }
+
+      if (cancelled) return
+
+      if (images.length === 0) {
+        setPrintError('Could not prepare the selected coupons for printing.')
+        setPrintItems([])
+        setIsPreparingPrint(false)
+        return
+      }
+
+      // NOTE: deliberately no 'noopener' here — passing it makes several
+      // browsers (Chrome included) hand back a null/unusable reference for
+      // the new tab, since noopener's whole point is to sever that link.
+      // We generate the tab's content ourselves, so we need the reference.
+      const printWindow = window.open('', '_blank')
+      if (!printWindow) {
+        setPrintError('Please allow pop-ups for this site to print.')
+        setPrintItems([])
+        setIsPreparingPrint(false)
+        return
+      }
+
+      const pagesHtml = images
+        .map(
+          (img) => `
+      <div class="cc-print-page">
+        <img src="${img.dataUrl}" alt="${_.escape(img.name)}" />
+      </div>`
+        )
+        .join('')
+
+      printWindow.document.write(`<!DOCTYPE html>
+<html>
+  <head>
+    <title>Print Coupons</title>
+    <meta charset="utf-8" />
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 0; }
+      .cc-print-page {
+        width: 100%;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        page-break-after: always;
+        padding: 24px;
+      }
+      .cc-print-page:last-child { page-break-after: auto; }
+      .cc-print-page img {
+        max-width: 100%;
+        max-height: 100vh;
+        object-fit: contain;
+      }
+      @media print {
+        .cc-print-page { min-height: auto; }
+      }
+    </style>
+  </head>
+  <body>${pagesHtml}
+  </body>
+</html>`)
+      printWindow.document.close()
+      printWindow.focus()
+      printWindow.onload = () => printWindow.print()
+      // Fallback in case onload doesn't fire (some browsers with document.write).
+      setTimeout(() => printWindow.print(), 300)
+
+      setPrintItems([])
+      setIsPreparingPrint(false)
+    }
+
+    run()
+
+    return () => {
+      cancelled = true
+    }
+  }, [printItems])
+
   return (
     <div className="gc-wrap">
       <div className="gc-toolbar">
@@ -310,6 +615,26 @@ function CheckCoupon({ onCancel }) {
             aria-label="Search created coupons"
           />
         </div>
+        <button
+          type="button"
+          className="cc-print-button"
+          onClick={handlePrintSelected}
+          disabled={selectedCount === 0 || isPreparingPrint}
+          title={selectedCount === 0 ? 'Select coupons to print' : `Print ${selectedCount} selected`}
+        >
+          {isPreparingPrint ? (
+            <Loader2 size={16} strokeWidth={2.25} className="gc-spin" />
+          ) : (
+            <Printer size={16} strokeWidth={2.25} />
+          )}
+          {isPreparingPrint ? 'Preparing…' : `Print${selectedCount > 0 ? ` (${selectedCount})` : ''}`}
+        </button>
+        {selectedCount > 0 && !isPreparingPrint && (
+          <button type="button" className="cc-clear-button" onClick={clearSelection}>
+            Clear selection
+          </button>
+        )}
+        {printError && <span className="cc-print-error">{printError}</span>}
         <button type="button" className="gc-refresh" onClick={load} disabled={loading}>
           <RefreshCw size={16} strokeWidth={2.25} className={loading ? 'gc-spin' : ''} />
           Refresh
@@ -344,38 +669,100 @@ function CheckCoupon({ onCancel }) {
         </div>
       )}
 
-      {!loading && !error && filtered.length > 0 && (
-        <div className="cc-table-wrap">
-          <table className="cc-table">
-            <thead>
-              <tr>
-                {columns.map((col) => (
-                  <th key={col}>{humanizeKey(col)}</th>
-                ))}
-                <th>Preview</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((row, idx) => (
-                <tr key={idx}>
-                  {columns.map((col) => (
-                    <td key={col}>{formatCellValue(row[col])}</td>
-                  ))}
-                  <td>
-                    <button
-                      type="button"
-                      className="cc-view-button"
-                      onClick={() => openPreview(row)}
-                      aria-label="View coupon"
-                      title="View coupon"
-                    >
-                      <Eye size={16} strokeWidth={2.25} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {!loading && !error && groupedRows.length > 0 && (
+        <div className="cc-groups">
+          {groupedRows.map((group) => {
+            const isExpanded = expandedCouponIds.has(group.couponId)
+            const { all: groupAllSelected, some: groupSomeSelected } = groupSelectionState(group)
+            return (
+              <div key={group.couponId} className="cc-group">
+                <button
+                  type="button"
+                  className="cc-group-header"
+                  onClick={() => toggleGroup(group.couponId)}
+                  aria-expanded={isExpanded}
+                >
+                  <span className="cc-group-header-left">
+                    <TriStateCheckbox
+                      checked={groupAllSelected}
+                      indeterminate={groupSomeSelected}
+                      ariaLabel={`Select all rows in Coupon ${group.couponId}`}
+                      // Stop the click from also toggling expand/collapse
+                      // (the header itself is the button we're inside of).
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => setGroupSelected(group, e.target.checked)}
+                    />
+                    {isExpanded ? (
+                      <ChevronDown size={16} strokeWidth={2.25} />
+                    ) : (
+                      <ChevronRight size={16} strokeWidth={2.25} />
+                    )}
+                    <span className="cc-group-title">Coupon {group.couponId}</span>
+                    {group.name && <span className="cc-group-subtitle">{group.name}</span>}
+                  </span>
+                  <span className="cc-group-count">
+                    {group.rows.length} {group.rows.length === 1 ? 'entry' : 'entries'}
+                  </span>
+                </button>
+
+                {isExpanded && (
+                  <div className="cc-table-wrap">
+                    <table className="cc-table">
+                      <thead>
+                        <tr>
+                          <th className="cc-select-col">
+                            <TriStateCheckbox
+                              checked={groupAllSelected}
+                              indeterminate={groupSomeSelected}
+                              ariaLabel={`Select all rows in Coupon ${group.couponId}`}
+                              onChange={(e) => setGroupSelected(group, e.target.checked)}
+                            />
+                          </th>
+                          {columns.map((col) => (
+                            <th key={col}>{humanizeKey(col)}</th>
+                          ))}
+                          <th>Preview</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.rows.map((row, idx) => {
+                          const key = rowKey(group.couponId, idx)
+                          const isChecked = selectedKeys.has(key)
+                          return (
+                            <tr key={idx} className={isChecked ? 'cc-row-selected' : ''}>
+                              <td className="cc-select-col">
+                                <input
+                                  type="checkbox"
+                                  className="cc-checkbox"
+                                  checked={isChecked}
+                                  onChange={() => toggleRowSelected(key)}
+                                  aria-label="Select row for print"
+                                />
+                              </td>
+                              {columns.map((col) => (
+                                <td key={col}>{formatCellValue(row[col])}</td>
+                              ))}
+                              <td>
+                                <button
+                                  type="button"
+                                  className="cc-view-button"
+                                  onClick={() => openPreview(row)}
+                                  aria-label="View coupon"
+                                  title="View coupon"
+                                >
+                                  <Eye size={16} strokeWidth={2.25} />
+                                </button>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -458,6 +845,26 @@ function CheckCoupon({ onCancel }) {
         </div>
       )}
 
+      {/* Off-screen render target for the print flow: each selected
+          coupon's design is mounted here (never visible to the user) so
+          html2canvas has a real DOM node per coupon to rasterize before
+          the print window opens. Cleared as soon as capture finishes. */}
+      {printItems.length > 0 && (
+        <div aria-hidden="true" style={{ position: 'fixed', top: 0, left: -99999, pointerEvents: 'none' }}>
+          {printItems.map((item) => (
+            <div
+              key={item.key}
+              ref={(el) => {
+                printNodeRefs.current[item.key] = el
+              }}
+              className="gc-art"
+            >
+              <VoucherCanvas design={item.design} />
+            </div>
+          ))}
+        </div>
+      )}
+
       <style>{`
         .cc-loading {
           display: flex;
@@ -467,6 +874,74 @@ function CheckCoupon({ onCancel }) {
           color: #6B667F;
           font-size: 14px;
           font-weight: 500;
+        }
+
+        .cc-groups {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .cc-group {
+          border: 1px solid #E4E1EE;
+          border-radius: 12px;
+          background: #FFFFFF;
+          overflow: hidden;
+        }
+
+        .cc-group-header {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 12px 16px;
+          background: #FBFAFD;
+          border: none;
+          cursor: pointer;
+          text-align: left;
+        }
+
+        .cc-group-header:hover {
+          background: #F6F5FA;
+        }
+
+        .cc-group-header-left {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #1C1A24;
+          min-width: 0;
+        }
+
+        .cc-group-title {
+          font-size: 14px;
+          font-weight: 700;
+          white-space: nowrap;
+        }
+
+        .cc-group-subtitle {
+          font-size: 13px;
+          color: #6B667F;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .cc-group-count {
+          font-size: 12px;
+          font-weight: 600;
+          color: #6B667F;
+          background: #F0EEF6;
+          padding: 3px 10px;
+          border-radius: 999px;
+          white-space: nowrap;
+        }
+
+        .cc-group .cc-table-wrap {
+          border: none;
+          border-top: 1px solid #E4E1EE;
+          border-radius: 0;
         }
 
         .cc-table-wrap {
@@ -511,6 +986,26 @@ function CheckCoupon({ onCancel }) {
           background: #FAF9FD;
         }
 
+        .cc-row-selected {
+          background: #FBF3E8;
+        }
+
+        .cc-row-selected:hover {
+          background: #F8ECDA !important;
+        }
+
+        .cc-select-col {
+          width: 36px;
+          text-align: center !important;
+        }
+
+        .cc-checkbox {
+          width: 16px;
+          height: 16px;
+          accent-color: #B9762E;
+          cursor: pointer;
+        }
+
         .cc-view-button {
           display: inline-flex;
           align-items: center;
@@ -527,6 +1022,44 @@ function CheckCoupon({ onCancel }) {
         .cc-view-button:hover {
           background: #F6F5FA;
           color: #1C1A24;
+        }
+
+        .cc-print-button,
+        .cc-clear-button {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 14px;
+          border-radius: 8px;
+          border: 1px solid #E4E1EE;
+          background: #FFFFFF;
+          color: #1C1A24;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+
+        .cc-print-button:hover,
+        .cc-clear-button:hover {
+          background: #F6F5FA;
+        }
+
+        .cc-print-button:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .cc-clear-button {
+          color: #6B667F;
+          border-color: transparent;
+          background: transparent;
+          padding: 8px 10px;
+        }
+
+        .cc-print-error {
+          font-size: 12px;
+          color: #B3261E;
         }
 
         .cc-code-value-row {
