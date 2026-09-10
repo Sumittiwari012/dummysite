@@ -185,7 +185,7 @@ const handleSendWhatsApp = async () => {
     const message =
       `Dear Customer,\n` +
       `Thanks for shopping at Grip Style. As part of our green initiative, your digital bill awaits: ${billLink}\n` +
-      `Happy Shopping.\n\n` +
+      `Happy Shopping!.\n\n` +
       `Invoice Number: ${invoiceNumber}\n` +
       `Total Payable Amount: ₹${payableAmount.toFixed(2)}`;
 
