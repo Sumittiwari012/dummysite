@@ -1,4 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import UpiQrPayment from './upiQrPayment';
+import CustomerDisplaySettings from './CustomerDisplaySettings';
+import {
+  loadSettings,
+  describeSettings,
+  openCustomerWindow,
+  warmScreenCache
+} from './customerDisplay';
 
 const PAYMENT_METHODS = ['Cash', 'Card', 'UPI', 'WALLET'];
 
@@ -10,6 +18,7 @@ function Payment({
   payableAmount,
   walletBalance = 0,
   customerPhone, // required for the WalletOtp endpoint
+  upiGatewayId, // optional: id of the registered UPI phone; falls back to localStorage 'upiGatewayId'
   existingPayments = [],
   onUpdatePayments,
   onComplete,
@@ -20,6 +29,32 @@ function Payment({
   const [method, setMethod] = useState(PAYMENT_METHODS[0]);
   const [amountInput, setAmountInput] = useState('');
   const [error, setError] = useState('');
+
+  // ── UPI QR: holds the amount being collected while the QR is open ──
+  const [upiAmount, setUpiAmount] = useState(null);
+  // The customer display window (QR only). null = no customer display: the QR
+  // then shows in the operator panel
+  const [upiWindow, setUpiWindow] = useState(null);
+  const upiWindowRef = useRef(null);
+
+  // Where the QR is shown (saved on this computer, see CustomerDisplaySettings)
+  const [displayCfg, setDisplayCfg] = useState(() => loadSettings());
+  const [showDisplaySettings, setShowDisplaySettings] = useState(false);
+
+  // Lets "is the customer screen still connected?" be answered instantly at click time
+  useEffect(() => { warmScreenCache(); }, []);
+
+  const closeUpi = () => {
+    try { upiWindowRef.current?.close(); } catch { /* already closed */ }
+    upiWindowRef.current = null;
+    setUpiWindow(null);
+    setUpiAmount(null);
+  };
+
+  // If this payment window goes away, don't leave the customer display open
+  useEffect(() => () => {
+    try { upiWindowRef.current?.close(); } catch { /* ignore */ }
+  }, []);
 
   // ── OTP flow state ──
   const [otpModalOpen, setOtpModalOpen] = useState(false);
@@ -59,8 +94,10 @@ function Payment({
     }
   };
 
-  const commitPayment = (amt) => {
-    const newPayments = [...payments, { method, amount: amt, paidAt: new Date().toISOString() }];
+  // payMethod is explicit because the UPI callback can fire after the user
+  // has switched the selected method.
+  const commitPayment = (amt, payMethod = method) => {
+    const newPayments = [...payments, { method: payMethod, amount: amt, paidAt: new Date().toISOString() }];
     setPayments(newPayments);
     onUpdatePayments(newPayments); // persist to parent's in-memory store, keyed by invoice
     setAmountInput('');
@@ -134,6 +171,23 @@ function Payment({
       return;
     }
 
+    if (method === 'UPI') {
+      // Don't add the payment yet — show the QR. The payment is only added once
+      // the money has arrived or the operator presses Accept (see onPaid below).
+      //
+      // The customer display must be opened directly inside this click handler,
+      // otherwise pop-up blockers stop it. openCustomerWindow() follows the saved
+      // setting and returns null when there is nothing to open (this-screen-only
+      // mode, customer screen not connected, pop-up blocked). In that case the QR
+      // is shown in the operator panel and the payment is accepted from there.
+      const win = openCustomerWindow();
+      upiWindowRef.current = win;
+      setUpiWindow(win);
+      // UPI carries 2 decimals only, so round before showing the QR.
+      setUpiAmount(Math.round(amt * 100) / 100);
+      return;
+    }
+
     commitPayment(amt);
   };
 
@@ -175,7 +229,7 @@ function Payment({
       }
 
       // OTP verified — now actually add the wallet payment.
-      commitPayment(pendingWalletAmount);
+      commitPayment(pendingWalletAmount, 'WALLET');
       setOtpModalOpen(false);
       setPendingWalletAmount(null);
       setOtpInput('');
@@ -274,9 +328,24 @@ function Payment({
               />
               <button onClick={handlePayFull} style={styles.fullButton}>Pay Full</button>
               <button onClick={handleAddPayment} style={styles.addButton} disabled={otpSending}>
-                {otpSending && method === 'WALLET' ? 'Sending OTP...' : 'Add'}
+                {otpSending && method === 'WALLET'
+                  ? 'Sending OTP...'
+                  : method === 'UPI'
+                    ? 'Show QR'
+                    : 'Add'}
               </button>
             </div>
+
+            {method === 'UPI' && (
+              <div style={styles.displayRow}>
+                <span>
+                  Customer display: <strong>{describeSettings(displayCfg)}</strong>
+                </span>
+                <button onClick={() => setShowDisplaySettings(true)} style={styles.fullButton}>
+                  Change
+                </button>
+              </div>
+            )}
 
             {error && <p style={styles.errorText}>{error}</p>}
           </div>
@@ -339,6 +408,25 @@ function Payment({
           </div>
         </div>
       )}
+
+      {showDisplaySettings && (
+        <CustomerDisplaySettings
+          onClose={() => setShowDisplaySettings(false)}
+          onSaved={() => setDisplayCfg(loadSettings())}
+        />
+      )}
+
+      {upiAmount != null && (
+        <UpiQrPayment
+          amount={upiAmount}
+          invoiceNumber={invoiceNumber}
+          gatewayId={upiGatewayId}
+          targetWindow={upiWindow}
+          onDisplayWindowChange={(win) => { upiWindowRef.current = win; }}
+          onPaid={({ amount }) => commitPayment(Number(amount), 'UPI')}
+          onClose={closeUpi}
+        />
+      )}
     </div>
   );
 }
@@ -395,6 +483,10 @@ const styles = {
     opacity: 0.5, cursor: 'not-allowed',
   },
   inputRow: { display: 'flex', gap: '8px' },
+  displayRow: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
+    fontSize: '0.8rem', color: '#555',
+  },
   amountInput: {
     flex: 1, padding: '10px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '1rem',
   },

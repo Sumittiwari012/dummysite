@@ -1,0 +1,350 @@
+.uqr-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.uqr-window {
+  background: #fff;
+  color: #1f2937;
+  width: 340px;
+  max-width: 92vw;
+  max-height: 94vh;
+  overflow-y: auto;
+  border-radius: 14px;
+  padding: 18px 20px 20px;
+  text-align: center;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.uqr-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.uqr-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.uqr-close {
+  border: none;
+  background: transparent;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+  color: #6b7280;
+}
+
+.uqr-amount {
+  font-size: 34px;
+  font-weight: 700;
+  margin-top: 8px;
+}
+
+.uqr-invoice {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 6px;
+}
+
+.uqr-qr {
+  display: flex;
+  justify-content: center;
+  margin: 8px 0;
+}
+
+.uqr-timer {
+  font-size: 28px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.uqr-timer--low {
+  color: #dc2626;
+}
+
+.uqr-bar {
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 6px 0 10px;
+}
+
+.uqr-bar-fill {
+  height: 100%;
+  background: #16a34a;
+  transition: width 0.25s linear;
+}
+
+.uqr-timer--low + .uqr-bar .uqr-bar-fill {
+  background: #dc2626;
+}
+
+.uqr-status {
+  margin: 8px 0;
+  font-size: 14px;
+  color: #4b5563;
+}
+
+.uqr-error {
+  margin: 8px 0;
+  font-size: 13px;
+  color: #dc2626;
+}
+
+.uqr-paid {
+  padding: 12px 0;
+}
+
+.uqr-smiley {
+  font-size: 96px;
+  line-height: 1;
+  animation: uqr-pop 0.45s ease-out;
+}
+
+@keyframes uqr-pop {
+  0%   { transform: scale(0.3); opacity: 0; }
+  70%  { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+.uqr-expired {
+  padding: 12px 0;
+}
+
+.uqr-button {
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.uqr-button:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.uqr-cancel {
+  margin-top: 6px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #374151;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.uqr-cancel:disabled,
+.uqr-close:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── Accept payment ── */
+.uqr-accept {
+  width: 100%;
+  margin-top: 12px;
+  border: none;
+  background: #16a34a;
+  color: #fff;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.uqr-accept:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.uqr-accept-confirm {
+  margin-top: 12px;
+}
+
+.uqr-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.uqr-actions > button {
+  flex: 1;
+  margin-top: 0;
+}
+
+.uqr-actions > .uqr-accept {
+  padding: 8px 16px;
+  font-size: 13px;
+}
+
+/* ── Customer display (separate window): QR only, no buttons ── */
+.uqr-display {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f3f4f6;
+  color: #1f2937;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  text-align: center;
+}
+
+.uqr-display-card {
+  background: #fff;
+  width: 400px;
+  max-width: 94vw;
+  padding: 24px 28px 28px;
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+}
+
+.uqr-display-title {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.uqr-display-amount {
+  font-size: 44px;
+  font-weight: 700;
+  margin-top: 6px;
+}
+
+/* Small wide screens (5-inch 800x480): QR on the left, details on the right */
+.uqr-display-card--wide {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  width: auto;
+  max-width: 98vw;
+  padding: 10px 20px;
+}
+
+.uqr-display-card--wide .uqr-qr {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.uqr-display-info {
+  min-width: 190px;
+  max-width: 300px;
+}
+
+@media (max-height: 520px) {
+  .uqr-display-title { font-size: 16px; }
+  .uqr-display-amount { font-size: 34px; margin-top: 2px; }
+  .uqr-display .uqr-timer { font-size: 24px; }
+  .uqr-display .uqr-status { font-size: 13px; margin: 4px 0; }
+  .uqr-display .uqr-smiley { font-size: 72px; }
+}
+
+/* ── Operator panel extras ── */
+.uqr-note {
+  margin: 14px 0 4px;
+  padding: 10px;
+  background: #f3f4f6;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.uqr-link {
+  margin-top: 8px;
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ── Customer display settings window ── */
+.cds-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2100;
+}
+
+.cds-window {
+  background: #fff;
+  color: #1f2937;
+  width: 400px;
+  max-width: 94vw;
+  max-height: 94vh;
+  overflow-y: auto;
+  border-radius: 14px;
+  padding: 18px 20px 20px;
+  text-align: left;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.cds-hint {
+  margin: 8px 0 12px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.cds-option,
+.cds-screen {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.cds-option strong,
+.cds-screen strong {
+  display: block;
+  font-size: 14px;
+}
+
+.cds-option small,
+.cds-screen small {
+  display: block;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.cds-option--on,
+.cds-screen--on {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.cds-option--off {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cds-screens {
+  margin: 4px 0 8px 8px;
+  padding-left: 12px;
+  border-left: 3px solid #e5e7eb;
+}
+
+.cds-screens > .uqr-button {
+  margin-bottom: 8px;
+}
+
+.cds-actions {
+  margin-top: 12px;
+}
