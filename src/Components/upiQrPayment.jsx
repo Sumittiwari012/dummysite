@@ -12,16 +12,19 @@ const UPI_API_BASE_URL = 'https://gripstyleapi.runasp.net';
 const UPI_GATEWAY_ID = 2;   // id of the registered UPI phone (MRegisteredPhNumberGateway.Id)
 const UPI_PAYEE_VPA = 'Q885354844@ybl';
 const UPI_PAYEE_NAME = 'BISWAJIT BISWAS';
-// Optional. Google Pay adds this to the QR codes it generates. It is not
-// part of the standard UPI link, so it can be left empty.
-const UPI_AID = 'uGICAgIDf7Iz2NQ';
+// Optional extras. Leave both EMPTY unless you copied them from a real QR of THIS
+// same VPA (they must belong together, or Google Pay may refuse the QR).
+//  UPI_AID  Google Pay's merchant profile id (the aid= value on a QR made by Google Pay).
+//  UPI_MCC  merchant category code (mc=). When set, a unique tr= reference is added too.
+const UPI_AID = '';
+const UPI_MCC = '';
 
 const API = `${UPI_API_BASE_URL}/api/Payments`;
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
-// upi://pay?pa=...&pn=...&am=50.00&cu=INR[&tn=...][&aid=...]
+// upi://pay?pa=...&pn=...&am=50.00&cu=INR[&tn=...][&mc=...&tr=...][&aid=...]
 // encodeURIComponent (not URLSearchParams) so spaces become %20, not "+".
-const buildUpiLink = ({ amount, note }) => {
+const buildUpiLink = ({ amount, note, ref }) => {
   const parts = [
     `pa=${encodeURIComponent(UPI_PAYEE_VPA)}`,
     `pn=${encodeURIComponent(UPI_PAYEE_NAME)}`,
@@ -29,6 +32,11 @@ const buildUpiLink = ({ amount, note }) => {
     'cu=INR'
   ];
   if (note) parts.push(`tn=${encodeURIComponent(note)}`);
+  if (UPI_MCC) {
+    parts.push(`mc=${encodeURIComponent(UPI_MCC)}`);
+    // unique reference per payment, letters and digits only
+    parts.push(`tr=${encodeURIComponent(ref || '')}`);
+  }
   if (UPI_AID) parts.push(`aid=${encodeURIComponent(UPI_AID)}`);
   return `upi://pay?${parts.join('&')}`;
 };
@@ -401,7 +409,11 @@ function UpiQrPayment({
   };
 
   const shownAmount = Number(qrAmount ?? amount);
-  const upiLink = buildUpiLink({ amount: shownAmount, note: invoiceNumber });
+  const upiLink = buildUpiLink({
+    amount: shownAmount,
+    note: invoiceNumber,
+    ref: requestIdRef.current ? `REQ${requestIdRef.current}` : ''
+  });
   const progress = windowSeconds > 0 ? (secondsLeft / windowSeconds) * 100 : 0;
   const canAccept = (phase === 'waiting' || phase === 'expired') && !!requestIdRef.current;
   const timerBlock = (
