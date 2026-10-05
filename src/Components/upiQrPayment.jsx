@@ -9,18 +9,24 @@ import './upiQrPayment.css';
 // "payment received" call from the phone and the held WaitForPayment call
 // from this window have to meet inside the same server process.
 const UPI_API_BASE_URL = 'https://gripstyleapi.runasp.net';
-const UPI_GATEWAY_ID = 2;   // id of the registered UPI phone (MRegisteredPhNumberGateway.Id)
-const UPI_PAYEE_VPA = 'Q885354844@ybl';
-const UPI_PAYEE_NAME = 'BISWAJIT BISWAS';
+const UPI_GATEWAY_ID = 1;   // id of the registered UPI phone (MRegisteredPhNumberGateway.Id)
+const UPI_PAYEE_VPA = 'st386700@okaxis';
+const UPI_PAYEE_NAME = 'Sumit Tiwari';
 // Optional extras. Leave both EMPTY unless you copied them from a real QR of THIS
 // same VPA (they must belong together, or Google Pay may refuse the QR).
 //  UPI_AID  Google Pay's merchant profile id (the aid= value on a QR made by Google Pay).
 //  UPI_MCC  merchant category code (mc=). When set, a unique tr= reference is added too.
-const UPI_AID = '';
+const UPI_AID = 'uGICAgIDf7Iz2NQ';   // from the Google Pay QR of st386700@okaxis; set '' to leave it out
 const UPI_MCC = '';
 
 const API = `${UPI_API_BASE_URL}/api/Payments`;
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
+
+// The transaction note (tn) carries the invoice number with every special
+// character removed, so only letters and digits are left. That makes it easy to
+// compare with the invoice. e.g. "MFS-1306-2026/27" becomes "MFS1306202627".
+const cleanNote = (note) =>
+  String(note ?? '').replace(/[^A-Za-z0-9]/g, '').slice(0, 50);
 
 // upi://pay?pa=...&pn=...&am=50.00&cu=INR[&tn=...][&mc=...&tr=...][&aid=...]
 // encodeURIComponent (not URLSearchParams) so spaces become %20, not "+".
@@ -31,7 +37,8 @@ const buildUpiLink = ({ amount, note, ref }) => {
     `am=${Number(amount).toFixed(2)}`,
     'cu=INR'
   ];
-  if (note) parts.push(`tn=${encodeURIComponent(note)}`);
+  const safeNote = cleanNote(note);
+  if (safeNote) parts.push(`tn=${encodeURIComponent(safeNote)}`);
   if (UPI_MCC) {
     parts.push(`mc=${encodeURIComponent(UPI_MCC)}`);
     // unique reference per payment, letters and digits only
@@ -235,6 +242,8 @@ function UpiQrPayment({
           body: JSON.stringify({
             customerId,
             name: customerName || '',
+            // The payment is matched to this request by invoice number
+            invoiceNumber: invoiceNumber || '',
             // UPI only carries 2 decimals; the server must store exactly what the QR shows
             amount: Math.round(Number(amount) * 100) / 100
           }),
