@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { MODES, loadSettings, openCustomerWindow } from './customerDisplay';
+// ANDROID: helper for the Android POS app (no-op on desktop browsers)
+import { hideAndroidDisplay } from './androidDisplay';
 import './upiQrPayment.css';
 
 // ── Config ────────────────────────────────────────────────────────────
@@ -83,11 +85,16 @@ const formatClock = (totalSeconds) => {
  * operator panel instead, right above Accept, so the payment can still be
  * taken and accepted from the one window.
  *
+ * ANDROID: inside the Android POS app, the QR is also pushed to the HDMI
+ * screen through the app's bridge (onQrRendered). When that works, the
+ * operator panel hides its own QR copy and shows a short note instead.
+ *
  * Props
  *  amount, invoiceNumber, customerName, gatewayId
  *  targetWindow           window opened by the parent for the customer display (or null)
  *  onDisplayWindowChange  (win) called when the display is re-opened, so the
  *                         parent can close it later
+ *  onQrRendered(svgEl)    ANDROID: returns a Promise<boolean>; true = QR is on the external screen
  *  onPaid(info)           once, when paid (auto-matched or Accept): { amount, payerName, requestId }
  *  onClose()              close everything (the parent should also close the display window)
  */
@@ -98,6 +105,7 @@ function UpiQrPayment({
   gatewayId,
   targetWindow,
   onDisplayWindowChange,
+  onQrRendered,
   onPaid,
   onClose
 }) {
@@ -125,6 +133,10 @@ function UpiQrPayment({
   const [portalEl, setPortalEl] = useState(null);
   // Size of the customer display window (a 5-inch screen is about 800x480)
   const [dispSize, setDispSize] = useState({ w: 800, h: 480 });
+
+  // ANDROID: true while the QR is showing on the HDMI screen through the app
+  const [androidShown, setAndroidShown] = useState(false);
+  const qrWrapRef = useRef(null);
 
   const requestIdRef = useRef(null);
   const endAtRef = useRef(0);
@@ -351,6 +363,31 @@ function UpiQrPayment({
     return () => host.clearInterval(timer);
   }, [phase, displayWin]);
 
+  // ── ANDROID: send the QR to the HDMI screen (through the app's bridge) ──
+  // Runs when the QR becomes available. Does nothing on desktop browsers
+  // (onQrRendered resolves false there), and nothing when a customer display
+  // window is already in use.
+  const upiLinkForAndroid = `${amount}|${qrAmount}|${invoiceNumber}|${attempt}`;
+  useEffect(() => {
+    if (phase !== 'waiting') {
+      // QR no longer valid (expired / error / paid): clear the external screen
+      setAndroidShown((was) => {
+        if (was) hideAndroidDisplay();
+        return false;
+      });
+      return undefined;
+    }
+    if (!onQrRendered || displayWin) return undefined;
+    let cancelled = false;
+    const svg = qrWrapRef.current?.querySelector('svg');
+    if (!svg) return undefined;
+    Promise.resolve(onQrRendered(svg)).then((ok) => {
+      if (!cancelled) setAndroidShown(!!ok);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, upiLinkForAndroid, displayWin]);
+
   // ── Smiley, then close ──
   useEffect(() => {
     if (phase !== 'paid') return undefined;
@@ -375,7 +412,9 @@ function UpiQrPayment({
       settledRef.current = true;
       onClose?.();
     } catch {
-      setError('Could not reach the server to cancel. Try again.');
+      // Server unreachable: close anyway so the counter is never stuck.
+      // (The cleanup below retries the cancel in the background.)
+      onClose?.();
     } finally {
       setIsClosing(false);
     }
@@ -383,9 +422,23 @@ function UpiQrPayment({
 
   // ── Operator: Accept (the money was received) ──
   const handleAccept = async () => {
-    if (!requestIdRef.current) return;
     setIsClosing(true);
     setError('');
+    // Counter accepts on its own authority (money seen on the phone/bank),
+    // used when the server cannot be reached or no request exists.
+    const acceptLocally = () =>
+      completePaid({
+        amount: qrAmount ?? amount,
+        payerName: '',
+        requestId: requestIdRef.current,
+        manual: true
+      });
+    if (!requestIdRef.current) {
+      acceptLocally();
+      setIsClosing(false);
+      setConfirmingAccept(false);
+      return;
+    }
     try {
       const res = await fetch(`${API}/ConfirmPayment`, {
         method: 'POST',
@@ -410,7 +463,8 @@ function UpiQrPayment({
         manual: true
       });
     } catch {
-      setError('Could not reach the server to accept. Try again.');
+      // Server unreachable: still let the counter accept.
+      acceptLocally();
     } finally {
       setIsClosing(false);
       setConfirmingAccept(false);
@@ -424,7 +478,7 @@ function UpiQrPayment({
     ref: requestIdRef.current ? `REQ${requestIdRef.current}` : ''
   });
   const progress = windowSeconds > 0 ? (secondsLeft / windowSeconds) * 100 : 0;
-  const canAccept = (phase === 'waiting' || phase === 'expired') && !!requestIdRef.current;
+  const canAccept = phase !== 'paid';
   const timerBlock = (
     <>
       <div className={`uqr-timer${secondsLeft <= 30 ? ' uqr-timer--low' : ''}`}>
@@ -494,7 +548,12 @@ function UpiQrPayment({
   // ── OPERATOR PANEL: status, Accept, Cancel (and the QR when there is no display) ──
   const operatorPanel = (
     <div className="uqr-overlay">
-      <div className="uqr-window" role="dialog" aria-modal="true">
+      <div
+        className="uqr-window"
+        role="dialog"
+        aria-modal="true"
+        style={{ maxHeight: '95vh', overflowY: 'auto' }}
+      >
         <div className="uqr-header">
           <h2>UPI Payment</h2>
         </div>
@@ -510,10 +569,19 @@ function UpiQrPayment({
               <p className="uqr-note">The QR code is showing on the customer display.</p>
             ) : (
               <>
-                <div className="uqr-qr">
+                {/* ANDROID: the QR is always rendered (the app reads it from here) but
+                    hidden once it is showing on the HDMI screen. */}
+                <div
+                  className="uqr-qr"
+                  ref={qrWrapRef}
+                  style={androidShown ? { display: 'none' } : undefined}
+                >
                   <QRCodeSVG value={upiLink} size={260} level="M" includeMargin />
                 </div>
-                {displayMode !== MODES.PANEL && (
+                {androidShown && (
+                  <p className="uqr-note">The QR code is showing on the customer screen.</p>
+                )}
+                {!androidShown && displayMode !== MODES.PANEL && (
                   <p className="uqr-note">No customer screen is connected, so the QR is shown here.</p>
                 )}
               </>
@@ -554,12 +622,15 @@ function UpiQrPayment({
 
         {(phase === 'waiting' || phase === 'expired') && error && <p className="uqr-error">{error}</p>}
 
-        {phase !== 'paid' && !displayWin && displayMode !== MODES.PANEL && (
+        {phase !== 'paid' && !displayWin && !androidShown && displayMode !== MODES.PANEL && (
           <button className="uqr-link" onClick={openDisplay}>
             Open customer display
           </button>
         )}
 
+        {/* Accept / Cancel stay pinned at the bottom so they are always visible */}
+        {phase !== 'paid' && (
+        <div style={{ position: 'sticky', bottom: 0, background: '#fff', paddingTop: 8, marginTop: 8 }}>
         {canAccept && (
           confirmingAccept ? (
             <div className="uqr-accept-confirm">
@@ -584,6 +655,8 @@ function UpiQrPayment({
           <button className="uqr-cancel" onClick={handleClose} disabled={isClosing}>
             {isClosing ? 'Please wait...' : 'Cancel payment'}
           </button>
+        )}
+        </div>
         )}
       </div>
     </div>
