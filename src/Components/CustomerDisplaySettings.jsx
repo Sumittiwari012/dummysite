@@ -5,9 +5,9 @@ import {
   saveSettings,
   listScreens,
   featuresFor,
-  supportsScreenDetails,
-  isAndroid
+  supportsScreenDetails
 } from './customerDisplay';
+import { getDeviceId, saveDeviceId, validateDeviceId } from './remoteDisplay';
 import './upiQrPayment.css';
 
 /**
@@ -21,13 +21,17 @@ import './upiQrPayment.css';
 function CustomerDisplaySettings({ onClose, onSaved }) {
   const saved = loadSettings();
   const canDetect = supportsScreenDetails();
-  const android = isAndroid();
 
   const [mode, setMode] = useState(saved.mode);
   const [screen, setScreen] = useState(saved.screen);
   const [screens, setScreens] = useState(saved.screen ? [saved.screen] : []);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState({ text: '', error: false });
+
+  // Customer panel (separate web page) device ID
+  const [deviceId, setDeviceId] = useState(() => getDeviceId());
+  const [validatedId, setValidatedId] = useState(() => getDeviceId()); // the saved one was checked when it was saved
+  const [checking, setChecking] = useState(false);
 
   const tell = (text, error = false) => setMessage({ text, error });
 
@@ -60,6 +64,30 @@ function CustomerDisplaySettings({ onClose, onSaved }) {
     }
   };
 
+  // Checks the device ID with the server. Resolves to true when it exists.
+  const checkDeviceId = async () => {
+    const value = deviceId.trim();
+    if (!value) {
+      tell('Enter a device ID first.', true);
+      return false;
+    }
+    setChecking(true);
+    tell('');
+    const result = await validateDeviceId(value);
+    setChecking(false);
+    if (result === 'valid') {
+      setValidatedId(value);
+      tell(`Device ID "${value}" is valid.`);
+      return true;
+    }
+    if (result === 'invalid') {
+      tell('This device ID does not exist.', true);
+    } else {
+      tell('Cannot reach the server. Check the internet and try again.', true);
+    }
+    return false;
+  };
+
   // Opens a small test page where the QR will appear (runs inside the click)
   const test = () => {
     if (mode === MODES.WINDOW && !screen) {
@@ -82,11 +110,21 @@ function CustomerDisplaySettings({ onClose, onSaved }) {
     tell('A test page was opened for 4 seconds.');
   };
 
-  const save = () => {
+  const save = async () => {
     if (mode === MODES.WINDOW && !screen) {
       tell('Detect the screens and pick the customer screen first.', true);
       return;
     }
+
+    // A device ID is only saved once the server has confirmed it exists.
+    // An empty box removes the saved ID.
+    const value = deviceId.trim();
+    if (value && value !== validatedId) {
+      const ok = await checkDeviceId();
+      if (!ok) return;
+    }
+
+    saveDeviceId(value);
     saveSettings({ mode, screen });
     onSaved?.();
     onClose?.();
@@ -107,6 +145,9 @@ function CustomerDisplaySettings({ onClose, onSaved }) {
       </span>
     </label>
   );
+
+  const idTrimmed = deviceId.trim();
+  const idIsValid = idTrimmed !== '' && idTrimmed === validatedId;
 
   return (
     <div className="cds-overlay">
@@ -135,9 +176,7 @@ function CustomerDisplaySettings({ onClose, onSaved }) {
         {radio(
           MODES.TAB,
           'Separate tab (choose manually)',
-          android
-            ? 'Android: the QR opens in a new tab. Move or cast it to the customer screen yourself.'
-            : 'The QR opens in a new tab. Drag it to the customer screen yourself.'
+          'The QR opens in a new tab. Drag it to the customer screen yourself.'
         )}
 
         {mode === MODES.WINDOW && (
@@ -171,6 +210,31 @@ function CustomerDisplaySettings({ onClose, onSaved }) {
           </div>
         )}
 
+        {/* Customer panel device ID: added here, checked with the server, saved on this computer */}
+        <div className="cds-screens">
+          <strong>Customer panel device ID (optional)</strong>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              type="text"
+              value={deviceId}
+              onChange={(e) => setDeviceId(e.target.value)}
+              placeholder="e.g. COUNTER1"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={checking}
+              style={{ flex: 1, padding: 8, border: '1px solid #ccc', borderRadius: 4 }}
+            />
+            <button className="uqr-button" onClick={checkDeviceId} disabled={checking || !idTrimmed}>
+              {checking ? 'Checking...' : 'Validate'}
+            </button>
+          </div>
+          <small className="cds-hint">
+            {idIsValid
+              ? '✓ Valid. It is saved on this computer when you press Save.'
+              : 'The ID must exist in the database. It is checked when you press Validate or Save. Leave empty to remove it.'}
+          </small>
+        </div>
+
         {message.text && (
           <p className={message.error ? 'uqr-error' : 'uqr-status'}>{message.text}</p>
         )}
@@ -180,7 +244,7 @@ function CustomerDisplaySettings({ onClose, onSaved }) {
             <button className="uqr-cancel" onClick={test}>Test</button>
           )}
           <button className="uqr-cancel" onClick={onClose}>Cancel</button>
-          <button className="uqr-accept" onClick={save}>Save</button>
+          <button className="uqr-accept" onClick={save} disabled={checking}>Save</button>
         </div>
 
         <p className="cds-hint">

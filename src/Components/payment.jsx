@@ -7,12 +7,6 @@ import {
   openCustomerWindow,
   warmScreenCache
 } from './customerDisplay';
-// ANDROID (1/4): helper for the Android POS app. No-op on desktop browsers.
-import {
-  isAndroidDisplayAvailable,
-  showQrOnAndroid,
-  hideAndroidDisplay
-} from './androidDisplay';
 
 const PAYMENT_METHODS = ['Cash', 'Card', 'UPI', 'WALLET'];
 
@@ -55,13 +49,11 @@ function Payment({
     upiWindowRef.current = null;
     setUpiWindow(null);
     setUpiAmount(null);
-    hideAndroidDisplay(); // ANDROID (2/4): clear the external screen
   };
 
   // If this payment window goes away, don't leave the customer display open
   useEffect(() => () => {
     try { upiWindowRef.current?.close(); } catch { /* ignore */ }
-    hideAndroidDisplay(); // ANDROID (3/4)
   }, []);
 
   // ── OTP flow state ──
@@ -188,11 +180,7 @@ function Payment({
       // setting and returns null when there is nothing to open (this-screen-only
       // mode, customer screen not connected, pop-up blocked). In that case the QR
       // is shown in the operator panel and the payment is accepted from there.
-      //
-      // ANDROID (4/4): inside the Android app the QR is pushed to the HDMI screen
-      // through the bridge (see onQrRendered below), so no browser window is opened.
-      // The QR panel (with Accept / Cancel) stays on the POS screen.
-      const win = isAndroidDisplayAvailable() ? null : openCustomerWindow();
+      const win = openCustomerWindow();
       upiWindowRef.current = win;
       setUpiWindow(win);
       // UPI carries 2 decimals only, so round before showing the QR.
@@ -435,7 +423,6 @@ function Payment({
           gatewayId={upiGatewayId}
           targetWindow={upiWindow}
           onDisplayWindowChange={(win) => { upiWindowRef.current = win; }}
-          onQrRendered={showQrOnAndroid} // ANDROID: UpiQrPayment calls this with the QR <canvas>/<img>/<svg>
           onPaid={({ amount }) => commitPayment(Number(amount), 'UPI')}
           onClose={closeUpi}
         />

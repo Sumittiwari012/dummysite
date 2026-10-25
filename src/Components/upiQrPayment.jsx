@@ -2,8 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { MODES, loadSettings, openCustomerWindow } from './customerDisplay';
-// ANDROID: helper for the Android POS app (no-op on desktop browsers)
-import { hideAndroidDisplay } from './androidDisplay';
 import './upiQrPayment.css';
 
 // ── Config ────────────────────────────────────────────────────────────
@@ -85,16 +83,11 @@ const formatClock = (totalSeconds) => {
  * operator panel instead, right above Accept, so the payment can still be
  * taken and accepted from the one window.
  *
- * ANDROID: inside the Android POS app, the QR is also pushed to the HDMI
- * screen through the app's bridge (onQrRendered). When that works, the
- * operator panel hides its own QR copy and shows a short note instead.
- *
  * Props
  *  amount, invoiceNumber, customerName, gatewayId
  *  targetWindow           window opened by the parent for the customer display (or null)
  *  onDisplayWindowChange  (win) called when the display is re-opened, so the
  *                         parent can close it later
- *  onQrRendered(svgEl)    ANDROID: returns a Promise<boolean>; true = QR is on the external screen
  *  onPaid(info)           once, when paid (auto-matched or Accept): { amount, payerName, requestId }
  *  onClose()              close everything (the parent should also close the display window)
  */
@@ -105,7 +98,6 @@ function UpiQrPayment({
   gatewayId,
   targetWindow,
   onDisplayWindowChange,
-  onQrRendered,
   onPaid,
   onClose
 }) {
@@ -133,10 +125,6 @@ function UpiQrPayment({
   const [portalEl, setPortalEl] = useState(null);
   // Size of the customer display window (a 5-inch screen is about 800x480)
   const [dispSize, setDispSize] = useState({ w: 800, h: 480 });
-
-  // ANDROID: true while the QR is showing on the HDMI screen through the app
-  const [androidShown, setAndroidShown] = useState(false);
-  const qrWrapRef = useRef(null);
 
   const requestIdRef = useRef(null);
   const endAtRef = useRef(0);
@@ -363,31 +351,6 @@ function UpiQrPayment({
     return () => host.clearInterval(timer);
   }, [phase, displayWin]);
 
-  // ── ANDROID: send the QR to the HDMI screen (through the app's bridge) ──
-  // Runs when the QR becomes available. Does nothing on desktop browsers
-  // (onQrRendered resolves false there), and nothing when a customer display
-  // window is already in use.
-  const upiLinkForAndroid = `${amount}|${qrAmount}|${invoiceNumber}|${attempt}`;
-  useEffect(() => {
-    if (phase !== 'waiting') {
-      // QR no longer valid (expired / error / paid): clear the external screen
-      setAndroidShown((was) => {
-        if (was) hideAndroidDisplay();
-        return false;
-      });
-      return undefined;
-    }
-    if (!onQrRendered || displayWin) return undefined;
-    let cancelled = false;
-    const svg = qrWrapRef.current?.querySelector('svg');
-    if (!svg) return undefined;
-    Promise.resolve(onQrRendered(svg)).then((ok) => {
-      if (!cancelled) setAndroidShown(!!ok);
-    });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, upiLinkForAndroid, displayWin]);
-
   // ── Smiley, then close ──
   useEffect(() => {
     if (phase !== 'paid') return undefined;
@@ -569,19 +532,10 @@ function UpiQrPayment({
               <p className="uqr-note">The QR code is showing on the customer display.</p>
             ) : (
               <>
-                {/* ANDROID: the QR is always rendered (the app reads it from here) but
-                    hidden once it is showing on the HDMI screen. */}
-                <div
-                  className="uqr-qr"
-                  ref={qrWrapRef}
-                  style={androidShown ? { display: 'none' } : undefined}
-                >
+                <div className="uqr-qr">
                   <QRCodeSVG value={upiLink} size={260} level="M" includeMargin />
                 </div>
-                {androidShown && (
-                  <p className="uqr-note">The QR code is showing on the customer screen.</p>
-                )}
-                {!androidShown && displayMode !== MODES.PANEL && (
+                {displayMode !== MODES.PANEL && (
                   <p className="uqr-note">No customer screen is connected, so the QR is shown here.</p>
                 )}
               </>
@@ -622,7 +576,7 @@ function UpiQrPayment({
 
         {(phase === 'waiting' || phase === 'expired') && error && <p className="uqr-error">{error}</p>}
 
-        {phase !== 'paid' && !displayWin && !androidShown && displayMode !== MODES.PANEL && (
+        {phase !== 'paid' && !displayWin && displayMode !== MODES.PANEL && (
           <button className="uqr-link" onClick={openDisplay}>
             Open customer display
           </button>
