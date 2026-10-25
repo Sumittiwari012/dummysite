@@ -1,5 +1,8 @@
 const SETTINGS_KEY = 'customerDisplay';
 
+let screenCache = [];
+let screenCacheReady = false;
+
 export const MODES = Object.freeze({
   PANEL: 'panel',
   WINDOW: 'window',
@@ -9,7 +12,9 @@ export const MODES = Object.freeze({
 
 export const loadSettings = () => {
   try {
-    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    const saved = JSON.parse(
+      localStorage.getItem(SETTINGS_KEY) || '{}'
+    );
 
     return {
       mode: Object.values(MODES).includes(saved.mode)
@@ -18,7 +23,10 @@ export const loadSettings = () => {
       screen: saved.screen || ''
     };
   } catch {
-    return { mode: MODES.PANEL, screen: '' };
+    return {
+      mode: MODES.PANEL,
+      screen: ''
+    };
   }
 };
 
@@ -30,7 +38,12 @@ export const saveSettings = (settings) => {
     screen: settings?.screen || ''
   };
 
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(safe));
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(safe));
+  } catch {
+    // Browser storage may be unavailable.
+  }
+
   return safe;
 };
 
@@ -38,10 +51,13 @@ export const describeSettings = (settings = loadSettings()) => {
   switch (settings.mode) {
     case MODES.WINDOW:
       return 'separate browser window';
+
     case MODES.TAB:
       return 'new browser tab';
+
     case MODES.REMOTE:
       return 'customer panel (separate device)';
+
     default:
       return 'this screen only';
   }
@@ -52,7 +68,9 @@ export const supportsScreenDetails = () =>
   typeof window.getScreenDetails === 'function';
 
 export const listScreens = async () => {
-  if (!supportsScreenDetails()) return [];
+  if (!supportsScreenDetails()) {
+    return [];
+  }
 
   try {
     const details = await window.getScreenDetails();
@@ -64,11 +82,44 @@ export const listScreens = async () => {
       top: screen.top,
       width: screen.width,
       height: screen.height,
-      isPrimary: !!screen.isPrimary
+      isPrimary: Boolean(screen.isPrimary)
     }));
   } catch {
     return [];
   }
+};
+
+// Refresh the screen cache before the cashier opens a customer window.
+export const warmScreenCache = async () => {
+  screenCache = await listScreens();
+  screenCacheReady = true;
+  return screenCache;
+};
+
+const getSavedScreen = (screenId) => {
+  if (!screenId) {
+    return null;
+  }
+
+  // The saved setting stores screen coordinates as a comma-separated ID.
+  const cached = screenCache.find((screen) => screen.id === screenId);
+
+  if (cached) {
+    return cached;
+  }
+
+  const values = screenId.split(',').map(Number);
+
+  if (
+    values.length !== 4 ||
+    values.some((value) => !Number.isFinite(value))
+  ) {
+    return null;
+  }
+
+  const [left, top, width, height] = values;
+
+  return { left, top, width, height };
 };
 
 export const featuresFor = (screen) => {
@@ -76,12 +127,26 @@ export const featuresFor = (screen) => {
     return 'popup=yes,width=800,height=480';
   }
 
-  return `popup=yes,left=${screen.left},top=${screen.top},width=${screen.width},height=${screen.height}`;
+  return [
+    'popup=yes',
+    `left=${screen.left}`,
+    `top=${screen.top}`,
+    `width=${screen.width}`,
+    `height=${screen.height}`
+  ].join(',');
 };
 
 export const openCustomerWindow = () => {
   const { mode, screen } = loadSettings();
 
+  if (
+    typeof window === 'undefined' ||
+    typeof window.open !== 'function'
+  ) {
+    return null;
+  }
+
+  // These modes use the current screen or a separate Android device.
   if (mode === MODES.PANEL || mode === MODES.REMOTE) {
     return null;
   }
@@ -91,7 +156,18 @@ export const openCustomerWindow = () => {
   }
 
   if (mode === MODES.WINDOW) {
-    return window.open('', '_blank', featuresFor(screen)) || null;
+    // Use cached screen information when available.
+    const selectedScreen = screenCacheReady
+      ? getSavedScreen(screen)
+      : getSavedScreen(screen);
+
+    return (
+      window.open(
+        '',
+        '_blank',
+        featuresFor(selectedScreen)
+      ) || null
+    );
   }
 
   return null;
