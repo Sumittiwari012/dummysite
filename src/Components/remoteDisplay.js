@@ -1,129 +1,171 @@
-// Shared helpers for the customer display panel (used by the POS and by DisplayPanel.jsx).
-const KEY = 'customerDisplayDeviceId';
-const BASE = 'https://gripstyleapi.runasp.net/api';
-const DISPLAY_API = `${BASE}/Display`;
-const PAYMENTS_API = `${BASE}/Payments`;
+const DEVICE_KEY = 'customerDisplayDeviceId';
 
-// ── Device id saved on the POS computer ──
-export const getDeviceId = () => (localStorage.getItem(KEY) || '').trim();
+const API_BASE = 'https://gripstyleapi.runasp.net/api';
+const DISPLAY_API = `${API_BASE}/Display`;
+const PAYMENTS_API = `${API_BASE}/Payments`;
+
+export const getDeviceId = () => {
+  try {
+    return (localStorage.getItem(DEVICE_KEY) || '').trim();
+  } catch {
+    return '';
+  }
+};
 
 export const saveDeviceId = (id) => {
-  const v = (id || '').trim();
-  if (v) localStorage.setItem(KEY, v);
-  else localStorage.removeItem(KEY);
+  const value = String(id || '').trim();
+
+  try {
+    if (value) {
+      localStorage.setItem(DEVICE_KEY, value);
+    } else {
+      localStorage.removeItem(DEVICE_KEY);
+    }
+  } catch {
+    // Storage may be unavailable.
+  }
+
+  return value;
 };
 
-// ── GET /api/Display/Validate ──
-// Resolves to 'valid' | 'invalid' | 'offline'
 export const validateDeviceId = async (id, signal) => {
+  const deviceId = String(id || '').trim();
+
+  if (!deviceId) return 'invalid';
+
   try {
-    const res = await fetch(`${DISPLAY_API}/Validate?id=${encodeURIComponent(id)}`, {
-      cache: 'no-store',
-      signal
-    });
-    if (res.ok) return 'valid';
-    if (res.status === 404) return 'invalid';
+    const response = await fetch(
+      `${DISPLAY_API}/Validate?id=${encodeURIComponent(deviceId)}`,
+      { cache: 'no-store', signal }
+    );
+
+    if (response.ok) return 'valid';
+    if (response.status === 404) return 'invalid';
+
     return 'offline';
   } catch {
     return 'offline';
   }
 };
 
-// ── GET /api/Display/GetAmount (one call) ──
-// Resolves to
-//   { status: 'ok', amount, invoiceNumber? }   the device has an amount to show
-//   { status: 'none' }                         the amount is zero (nothing to do)
-//   { status: 'invalid' }                      the device id does not exist
-//   { status: 'offline' }                      the server could not be reached
 export const getDisplayAmount = async (id, signal) => {
+  const deviceId = String(id || '').trim();
+
+  if (!deviceId) return { status: 'invalid' };
+
   try {
-    const res = await fetch(`${DISPLAY_API}/GetAmount?id=${encodeURIComponent(id)}`, {
-      cache: 'no-store',
-      signal
-    });
-    if (res.status === 204) return { status: 'none' };
-    if (res.status === 404) return { status: 'invalid' };
-    if (!res.ok) return { status: 'offline' };
-    const body = await res.json();
-    const amount = Number(body?.amount) || 0;
-    if (amount <= 0) return { status: 'none' };
-    return { status: 'ok', amount, invoiceNumber: body?.invoiceNumber || '' };
-  } catch {
-    return { status: 'offline' };
+    const response = await fetch(
+      `${DISPLAY_API}/GetAmount?id=${encodeURIComponent(deviceId)}`,
+      { cache: 'no-store', signal }
+    );
+
+    if (response.status === 404) {
+      return { status: 'invalid' };
+    }
+
+    if (response.status === 204) {
+      return { status: 'ok', amount: 0 };
+    }
+
+    if (!response.ok) {
+      return { status: 'offline' };
+    }
+
+    const body = await response.json();
+
+    return {
+      status: 'ok',
+      amount: Number(body.amount || 0)
+    };
+  } catch (error) {
+    return {
+      status: error?.name === 'AbortError' ? 'aborted' : 'offline'
+    };
   }
 };
 
-// ── COMMON FUNCTION: call it once, it keeps asking the server by itself ──
-//
-//   const stop = watchDisplayAmount(deviceId, {
-//     onAmount:  ({ amount, invoiceNumber }) => ...,   // only when the value CHANGES (amount 0 = clear)
-//     onStatus:  (online) => ...,                      // optional: true / false
-//     onInvalid: () => ...,                            // optional: the id no longer exists (watching stops)
-//     intervalMs: 1000                                 // optional: gap between calls
-//   });
-//   stop();   // when done
-//
-// The next call is only made after the previous one has answered, so calls never
-// pile up. While the server is unreachable it slows down (up to 5 seconds) and
-// speeds up again by itself when the connection is back.
-export const watchDisplayAmount = (deviceId, { onAmount, onStatus, onInvalid, intervalMs = 1000 } = {}) => {
-  const controller = new AbortController();
+export const watchDisplayAmount = (
+  deviceId,
+  {
+    onAmount,
+    onStatus,
+    onInvalid,
+    intervalMs = 1000
+  } = {}
+) => {
   let stopped = false;
   let timer = null;
+  let lastAmount = null;
   let failures = 0;
-  let last;                        // undefined, so the first answer is always reported
+  let inFlight = false;
 
-  const stop = () => {
-    stopped = true;
-    clearTimeout(timer);
-    controller.abort();
-  };
+  const poll = async () => {
+    if (stopped || inFlight) return;
 
-  const tick = async () => {
-    const r = await getDisplayAmount(deviceId, controller.signal);
-    if (stopped) return;
+    inFlight = true;
+    const result = await getDisplayAmount(deviceId);
+    inFlight = false;
 
-    if (r.status === 'invalid') {
+    if (stopped || result.status === 'aborted') return;
+
+    if (result.status === 'invalid') {
       onInvalid?.();
-      stop();
       return;
     }
 
-    if (r.status === 'offline') {
-      failures += 1;
+    if (result.status === 'offline') {
+      failures++;
       onStatus?.(false);
     } else {
       failures = 0;
       onStatus?.(true);
-      const key = r.status === 'ok' ? `${r.amount}|${r.invoiceNumber}` : '0';
-      if (key !== last) {
-        last = key;
-        onAmount?.(r.status === 'ok'
-          ? { amount: r.amount, invoiceNumber: r.invoiceNumber }
-          : { amount: 0 });
+
+      if (result.amount !== lastAmount) {
+        lastAmount = result.amount;
+        onAmount?.(result.amount);
       }
     }
 
-    const wait = failures ? Math.min(intervalMs * (failures + 1), 5000) : intervalMs;
-    timer = setTimeout(tick, wait);
+    timer = setTimeout(
+      poll,
+      failures ? Math.min(5000, intervalMs * (failures + 1)) : intervalMs
+    );
   };
 
-  tick();
-  return stop;
+  poll();
+
+  return () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+  };
 };
 
-// ── POST /api/Payments/SetDisplayAmount (for the POS, later) ──
-// amount > 0 shows a QR on the panel, amount 0 clears it. Resolves to true when accepted.
-export const setDisplayAmount = async (deviceId, amount, keepalive = false) => {
-  if (!deviceId) return false;
+export const setDisplayAmount = async (
+  deviceId,
+  amount,
+  keepalive = false
+) => {
+  const id = String(deviceId || '').trim();
+  const numericAmount = Number(amount);
+
+  if (!id || !Number.isFinite(numericAmount) || numericAmount < 0) {
+    return false;
+  }
+
   try {
-    const res = await fetch(`${PAYMENTS_API}/SetDisplayAmount`, {
+    const response = await fetch(`${PAYMENTS_API}/SetDisplayAmount`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceId, amount: Math.round(Number(amount) * 100) / 100 }),
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        deviceId: id,
+        amount: Math.round(numericAmount * 100) / 100
+      }),
       keepalive
     });
-    return res.ok;
+
+    return response.ok;
   } catch {
     return false;
   }
