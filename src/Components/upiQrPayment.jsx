@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { MODES, loadSettings, openCustomerWindow } from './customerDisplay';
+import { getDeviceId, setDisplayAmount } from './remoteDisplay';
 import './upiQrPayment.css';
 
 // ── Config ────────────────────────────────────────────────────────────
@@ -105,6 +106,9 @@ function UpiQrPayment({
 
   // The saved choice: 'panel' | 'window' | 'tab'
   const [displayMode] = useState(() => loadSettings().mode);
+
+  // Customer panel mode: the device whose screen should show this QR ('' = not used)
+  const [remoteId] = useState(() => (loadSettings().mode === MODES.REMOTE ? getDeviceId() : ''));
 
   // creating | waiting | paid | expired | error
   const [phase, setPhase] = useState('creating');
@@ -440,6 +444,16 @@ function UpiQrPayment({
     note: invoiceNumber,
     ref: requestIdRef.current ? `REQ${requestIdRef.current}` : ''
   });
+
+  // ── Customer panel: send the amount while the QR is waiting, send 0 when it ends ──
+  // (paid, expired, error, cancelled or closed). Fire-and-forget: a failure here
+  // never touches the payment itself. Must stay below `shownAmount` (used in the deps).
+  useEffect(() => {
+    if (!remoteId || phase !== 'waiting') return undefined;
+    setDisplayAmount(remoteId, shownAmount);
+    return () => { setDisplayAmount(remoteId, 0, true); };
+  }, [remoteId, phase, shownAmount]);
+
   const progress = windowSeconds > 0 ? (secondsLeft / windowSeconds) * 100 : 0;
   const canAccept = phase !== 'paid';
   const timerBlock = (
@@ -535,8 +549,11 @@ function UpiQrPayment({
                 <div className="uqr-qr">
                   <QRCodeSVG value={upiLink} size={260} level="M" includeMargin />
                 </div>
-                {displayMode !== MODES.PANEL && (
+                {(displayMode === MODES.WINDOW || displayMode === MODES.TAB) && (
                   <p className="uqr-note">No customer screen is connected, so the QR is shown here.</p>
+                )}
+                {remoteId && (
+                  <p className="uqr-note">The QR is also being sent to customer panel "{remoteId}".</p>
                 )}
               </>
             )}
@@ -576,7 +593,7 @@ function UpiQrPayment({
 
         {(phase === 'waiting' || phase === 'expired') && error && <p className="uqr-error">{error}</p>}
 
-        {phase !== 'paid' && !displayWin && displayMode !== MODES.PANEL && (
+        {phase !== 'paid' && !displayWin && (displayMode === MODES.WINDOW || displayMode === MODES.TAB) && (
           <button className="uqr-link" onClick={openDisplay}>
             Open customer display
           </button>

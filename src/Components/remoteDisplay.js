@@ -28,6 +28,7 @@ export const saveDeviceId = (id) => {
   return value;
 };
 
+// Resolves to 'valid' | 'invalid' | 'offline'
 export const validateDeviceId = async (id, signal) => {
   const deviceId = String(id || '').trim();
 
@@ -48,6 +49,9 @@ export const validateDeviceId = async (id, signal) => {
   }
 };
 
+// One call to GET /api/Display/GetAmount.
+// Resolves to { status: 'ok', amount } (amount 0 = nothing to show),
+// { status: 'invalid' }, { status: 'offline' } or { status: 'aborted' }.
 export const getDisplayAmount = async (id, signal) => {
   const deviceId = String(id || '').trim();
 
@@ -84,6 +88,11 @@ export const getDisplayAmount = async (id, signal) => {
   }
 };
 
+// COMMON FUNCTION: call it once, it keeps asking GetAmount by itself.
+//   onAmount({ amount })  only when the value changes (amount 0 = clear)
+//   onStatus(online)      true / false
+//   onInvalid()           the id no longer exists (watching stops)
+// Returns a stop() function.
 export const watchDisplayAmount = (
   deviceId,
   {
@@ -122,7 +131,7 @@ export const watchDisplayAmount = (
 
       if (result.amount !== lastAmount) {
         lastAmount = result.amount;
-        onAmount?.(result.amount);
+        onAmount?.({ amount: result.amount });   // an object, as DisplayPanel expects
       }
     }
 
@@ -140,6 +149,8 @@ export const watchDisplayAmount = (
   };
 };
 
+// POST /api/Payments/SetDisplayAmount (used by the POS).
+// amount > 0 shows a QR on the panel, amount 0 clears it. Resolves to true when accepted.
 export const setDisplayAmount = async (
   deviceId,
   amount,

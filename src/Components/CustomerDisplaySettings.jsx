@@ -32,7 +32,7 @@ const choices = [
   ],
   [
     MODES.REMOTE,
-    'Customer panel (Android / separate device)',
+    'Customer panel (web page)',
     'Display the payment amount on a registered customer device.'
   ]
 ];
@@ -47,7 +47,11 @@ export default function CustomerDisplaySettings({ onClose, onSaved }) {
   const [status, setStatus] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Screen detection can trigger a browser permission prompt, so it only runs
+  // once "Separate window" is selected.
   useEffect(() => {
+    if (mode !== MODES.WINDOW) return undefined;
+
     let active = true;
 
     listScreens().then((items) => {
@@ -59,7 +63,7 @@ export default function CustomerDisplaySettings({ onClose, onSaved }) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [mode]);
 
   const handleSave = async () => {
     if (saving) return;
@@ -68,6 +72,8 @@ export default function CustomerDisplaySettings({ onClose, onSaved }) {
     setStatus('');
 
     try {
+      // The customer panel option needs a device ID that exists on the server.
+      // Other options leave the saved ID alone.
       if (mode === MODES.REMOTE) {
         const result = await validateDeviceId(deviceId);
 
@@ -81,8 +87,6 @@ export default function CustomerDisplaySettings({ onClose, onSaved }) {
         }
 
         saveDeviceId(deviceId);
-      } else {
-        saveDeviceId('');
       }
 
       const savedSettings = saveSettings({

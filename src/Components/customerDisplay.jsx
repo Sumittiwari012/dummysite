@@ -90,9 +90,32 @@ export const listScreens = async () => {
 };
 
 // Refresh the screen cache before the cashier opens a customer window.
+// Only runs in "separate window" mode, and only when the browser has already been
+// given permission, so it never shows a permission prompt by itself.
 export const warmScreenCache = async () => {
-  screenCache = await listScreens();
-  screenCacheReady = true;
+  if (!supportsScreenDetails() || loadSettings().mode !== MODES.WINDOW) {
+    return screenCache;
+  }
+
+  if (!navigator.permissions?.query) {
+    return screenCache;
+  }
+
+  for (const name of ['window-management', 'window-placement']) {
+    try {
+      const status = await navigator.permissions.query({ name });
+
+      if (status.state === 'granted') {
+        screenCache = await listScreens();
+        screenCacheReady = true;
+      }
+
+      return screenCache;
+    } catch {
+      // Try the older permission name.
+    }
+  }
+
   return screenCache;
 };
 
@@ -146,7 +169,7 @@ export const openCustomerWindow = () => {
     return null;
   }
 
-  // These modes use the current screen or a separate Android device.
+  // These modes use the current screen or a separate device.
   if (mode === MODES.PANEL || mode === MODES.REMOTE) {
     return null;
   }
@@ -156,18 +179,13 @@ export const openCustomerWindow = () => {
   }
 
   if (mode === MODES.WINDOW) {
-    // Use cached screen information when available.
-    const selectedScreen = screenCacheReady
-      ? getSavedScreen(screen)
-      : getSavedScreen(screen);
+    // The saved customer screen is no longer connected: return null so the QR
+    // is shown in the POS window instead of opening on the wrong screen.
+    if (screen && screenCacheReady && !screenCache.some((s) => s.id === screen)) {
+      return null;
+    }
 
-    return (
-      window.open(
-        '',
-        '_blank',
-        featuresFor(selectedScreen)
-      ) || null
-    );
+    return window.open('', '_blank', featuresFor(getSavedScreen(screen))) || null;
   }
 
   return null;
