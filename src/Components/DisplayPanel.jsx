@@ -25,6 +25,7 @@ const UPI_AID = 'uGICAgIDf7Iz2NQ';
 
 // The invoice number (when the server sends one) goes into the UPI note so the phone app
 // can match the payment, but it is never shown on the screen.
+
 const buildUpiLink = (amount, invoiceNumber) => {
   const parts = [
     `pa=${encodeURIComponent(UPI_PAYEE_VPA)}`,
@@ -32,11 +33,23 @@ const buildUpiLink = (amount, invoiceNumber) => {
     `am=${Number(amount).toFixed(2)}`,
     'cu=INR'
   ];
-  const note = String(invoiceNumber || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 50);
-  if (note) parts.push(`tn=${encodeURIComponent(note)}`);
-  if (UPI_AID) parts.push(`aid=${encodeURIComponent(UPI_AID)}`);
+
+  const note = String(invoiceNumber || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 50);
+
+  if (note) {
+    parts.push(`tn=${encodeURIComponent(note)}`);
+  }
+
+  if (UPI_AID) {
+    parts.push(`aid=${encodeURIComponent(UPI_AID)}`);
+  }
+
   return `upi://pay?${parts.join('&')}`;
 };
+
 
 const formatClock = (total) => {
   const m = String(Math.floor(total / 60)).padStart(2, '0');
