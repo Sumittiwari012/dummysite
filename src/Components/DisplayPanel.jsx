@@ -15,6 +15,9 @@ const STORE_KEY = 'displayPanelId';
 // Same value as PAYMENT_WINDOW_SECONDS in PaymentsController: how long one QR stays valid.
 const PAYMENT_WINDOW_SECONDS = 300;
 
+// How long the smiley stays on the panel after a payment completes.
+const PAID_SHOW_MS = 3000;
+
 // Your UPI details (same values as upiQrPayment.jsx)
 const UPI_PAYEE_VPA = 'st386700@okaxis';
 const UPI_PAYEE_NAME = 'Sumit Tiwari';
@@ -80,6 +83,8 @@ export default function DisplayPanel() {
   const [show, setShow] = useState({ amount: 0 });               // what GetAmount last returned
   const [secondsLeft, setSecondsLeft] = useState(PAYMENT_WINDOW_SECONDS);
   const endAtRef = useRef(0);
+  const [paid, setPaid] = useState(false);                       // payment completed: show the smiley
+  const paidTimerRef = useRef(null);
 
   const backToSetup = (message = '') => {
     clearId();
@@ -132,6 +137,11 @@ export default function DisplayPanel() {
     if (gate !== 'ready') return undefined;
     return watchDisplayAmount(id, {
       onAmount: (m) => {
+        if (m.paid) {                             // payment completed: smiley for a few seconds
+          setPaid(true);
+          clearTimeout(paidTimerRef.current);
+          paidTimerRef.current = setTimeout(() => setPaid(false), PAID_SHOW_MS);
+        }
         if (m.amount > 0) {                       // a new QR: restart the countdown
           endAtRef.current = Date.now() + PAYMENT_WINDOW_SECONDS * 1000;
           setSecondsLeft(PAYMENT_WINDOW_SECONDS);
@@ -153,6 +163,8 @@ export default function DisplayPanel() {
     const timer = setInterval(tick, 250);
     return () => clearInterval(timer);
   }, [counting, show]);
+
+  useEffect(() => () => clearTimeout(paidTimerRef.current), []);
 
   const changeId = () => {
     if (window.confirm('Remove the saved device ID and enter a different one?')) backToSetup();
@@ -216,8 +228,8 @@ export default function DisplayPanel() {
   const textW = landscape ? w - qrBox - 3 * pad : w - 2 * pad;
 
   const hasAmount = show.amount > 0;
-  const expired = hasAmount && secondsLeft <= 0;
-  const active = hasAmount && !expired;
+  const expired = hasAmount && secondsLeft <= 0 && !paid;
+  const active = hasAmount && !expired && !paid;
 
   const amountStr = hasAmount ? `₹${Number(show.amount).toFixed(2)}` : '';
   const titleFont = Math.max(14, Math.min(textW / 14, h * 0.055));
@@ -236,6 +248,21 @@ export default function DisplayPanel() {
       <div style={S.controls}>
         <button style={S.ctrl} onClick={changeId}>Change ID</button>
       </div>
+
+      {paid && (
+        <div style={{ textAlign: 'center' }}>
+          <div
+            role="img"
+            aria-label="Payment received"
+            style={{ fontSize: Math.max(80, small * 0.4), lineHeight: 1.1 }}
+          >
+            😊
+          </div>
+          <div style={{ fontSize: Math.max(20, small * 0.06), marginTop: pad }}>
+            Payment received. Thank you!
+          </div>
+        </div>
+      )}
 
       {active && (
         <div
@@ -280,7 +307,7 @@ export default function DisplayPanel() {
         </div>
       )}
 
-      {!hasAmount && (
+      {!hasAmount && !paid && (
         <div style={{ fontSize: Math.max(24, small * 0.09), opacity: 0.5 }}>Welcome</div>
       )}
     </div>

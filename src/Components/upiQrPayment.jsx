@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { MODES, loadSettings, openCustomerWindow } from './customerDisplay';
-import { getDeviceId, setDisplayAmount } from './remoteDisplay';
+import { getDeviceId, setDisplayAmount, setDisplayPaid } from './remoteDisplay';
 import './upiQrPayment.css';
 
 // ── Config ────────────────────────────────────────────────────────────
@@ -446,13 +446,26 @@ function UpiQrPayment({
   });
 
   // ── Customer panel: send the amount while the QR is waiting, send 0 when it ends ──
-  // (paid, expired, error, cancelled or closed). Fire-and-forget: a failure here
-  // never touches the payment itself. Must stay below `shownAmount` (used in the deps).
+  // (expired, error, cancelled or closed). Fire-and-forget: a failure here never
+  // touches the payment itself. Must stay below `shownAmount` (used in the deps).
   useEffect(() => {
     if (!remoteId || phase !== 'waiting') return undefined;
-    setDisplayAmount(remoteId, shownAmount);
+    // The invoice number goes along so the panel's QR carries the same UPI note
+    // (tn) as the QR in this window, which is what incoming payments are matched on.
+    setDisplayAmount(remoteId, shownAmount, false, invoiceNumber);
+    return () => {
+      // When the payment succeeded the effect below sends "paid" instead of 0
+      if (!paidFiredRef.current) setDisplayAmount(remoteId, 0, true);
+    };
+  }, [remoteId, phase, shownAmount, invoiceNumber]);
+
+  // ── Customer panel: payment completed -> show the smiley there too ──
+  // The panel clears itself when the POS closes this window (the cleanup sends 0).
+  useEffect(() => {
+    if (!remoteId || phase !== 'paid') return undefined;
+    setDisplayPaid(remoteId);
     return () => { setDisplayAmount(remoteId, 0, true); };
-  }, [remoteId, phase, shownAmount]);
+  }, [remoteId, phase]);
 
   const progress = windowSeconds > 0 ? (secondsLeft / windowSeconds) * 100 : 0;
   const canAccept = phase !== 'paid';

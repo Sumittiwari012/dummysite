@@ -28,7 +28,6 @@ export const saveDeviceId = (id) => {
   return value;
 };
 
-// Resolves to 'valid' | 'invalid' | 'offline'
 export const validateDeviceId = async (id, signal) => {
   const deviceId = String(id || '').trim();
 
@@ -49,9 +48,6 @@ export const validateDeviceId = async (id, signal) => {
   }
 };
 
-// One call to GET /api/Display/GetAmount.
-// Resolves to { status: 'ok', amount } (amount 0 = nothing to show),
-// { status: 'invalid' }, { status: 'offline' } or { status: 'aborted' }.
 export const getDisplayAmount = async (id, signal) => {
   const deviceId = String(id || '').trim();
 
@@ -68,7 +64,7 @@ export const getDisplayAmount = async (id, signal) => {
     }
 
     if (response.status === 204) {
-      return { status: 'ok', amount: 0 };
+      return { status: 'ok', amount: 0, paid: false, invoiceNumber: '' };
     }
 
     if (!response.ok) {
@@ -79,7 +75,9 @@ export const getDisplayAmount = async (id, signal) => {
 
     return {
       status: 'ok',
-      amount: Number(body.amount || 0)
+      amount: Number(body.amount || 0),
+      paid: Boolean(body.paid),
+      invoiceNumber: String(body.invoiceNumber || '')
     };
   } catch (error) {
     return {
@@ -88,10 +86,10 @@ export const getDisplayAmount = async (id, signal) => {
   }
 };
 
-// COMMON FUNCTION: call it once, it keeps asking GetAmount by itself.
-//   onAmount({ amount })  only when the value changes (amount 0 = clear)
+// Common function: call it once, it keeps asking GetAmount by itself.
+//   onAmount({ amount, paid, invoiceNumber })  only when something CHANGES (amount 0 = clear, paid = payment done)
 //   onStatus(online)      true / false
-//   onInvalid()           the id no longer exists (watching stops)
+//   onInvalid()           the device id no longer exists (watching stops)
 // Returns a stop() function.
 export const watchDisplayAmount = (
   deviceId,
@@ -104,7 +102,7 @@ export const watchDisplayAmount = (
 ) => {
   let stopped = false;
   let timer = null;
-  let lastAmount = null;
+  let lastKey = null;
   let failures = 0;
   let inFlight = false;
 
@@ -129,9 +127,12 @@ export const watchDisplayAmount = (
       failures = 0;
       onStatus?.(true);
 
-      if (result.amount !== lastAmount) {
-        lastAmount = result.amount;
-        onAmount?.({ amount: result.amount });   // an object, as DisplayPanel expects
+      const key = `${result.amount}|${result.paid ? 1 : 0}|${result.invoiceNumber}`;
+
+      if (key !== lastKey) {
+        lastKey = key;
+        // the panel expects an object; paid = the payment just completed (show the smiley)
+        onAmount?.({ amount: result.amount, paid: result.paid, invoiceNumber: result.invoiceNumber });
       }
     }
 
@@ -149,12 +150,14 @@ export const watchDisplayAmount = (
   };
 };
 
-// POST /api/Payments/SetDisplayAmount (used by the POS).
-// amount > 0 shows a QR on the panel, amount 0 clears it. Resolves to true when accepted.
+// POS side: amount > 0 shows a QR on the panel, amount 0 clears it.
+// invoiceNumber is stored with the amount so the panel can put it in the QR's UPI note
+// (it is never shown on the panel screen).
 export const setDisplayAmount = async (
   deviceId,
   amount,
-  keepalive = false
+  keepalive = false,
+  invoiceNumber = ''
 ) => {
   const id = String(deviceId || '').trim();
   const numericAmount = Number(amount);
@@ -171,9 +174,32 @@ export const setDisplayAmount = async (
       },
       body: JSON.stringify({
         deviceId: id,
-        amount: Math.round(numericAmount * 100) / 100
+        amount: Math.round(numericAmount * 100) / 100,
+        invoiceNumber: String(invoiceNumber || '')
       }),
       keepalive
+    });
+
+    return response.ok;
+  } catch {
+    return false;
+  }
+};
+
+// POS side: tell the panel the payment succeeded so it shows the smiley.
+// Follow it with setDisplayAmount(deviceId, 0) to clear the panel afterwards.
+export const setDisplayPaid = async (deviceId) => {
+  const id = String(deviceId || '').trim();
+
+  if (!id) return false;
+
+  try {
+    const response = await fetch(`${PAYMENTS_API}/SetDisplayAmount`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ deviceId: id, amount: 0, paid: true })
     });
 
     return response.ok;
